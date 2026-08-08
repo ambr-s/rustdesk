@@ -19,6 +19,8 @@ on:
 
 jobs:
   run-ci:
+    # Keep the upstream matrix for rustdesk/rustdesk, but do not run it on fork PRs.
+    if: ${{ github.repository == 'rustdesk/rustdesk' }}
     uses: ./.github/workflows/flutter-build.yml
     with:
       upload-artifact: false

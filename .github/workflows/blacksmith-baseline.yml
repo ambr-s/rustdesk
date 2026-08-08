@@ -1,0 +1,330 @@
+name: Blacksmith baseline desktop builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/blacksmith-baseline.yml"
+      - ".github/workflows/flutter-ci.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.py"
+      - "src/**"
+      - "libs/**"
+      - "flutter/**"
+      - "vcpkg.json"
+      - "res/vcpkg/**"
+      - "res/vcpkg-triplets/**"
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: blacksmith-baseline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_VERSION: "1.4.9"
+  CARGO_EXPAND_VERSION: "1.0.95"
+  FLUTTER_BUILD_VERSION: "3.24.5"
+  FLUTTER_BRIDGE_VERSION: "3.22.3"
+  FLUTTER_RUST_BRIDGE_VERSION: "1.80.1"
+  LLVM_VERSION: "15.0.6"
+  RUST_VERSION: "1.75"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  generate-bridge:
+    if: ${{ github.repository == 'ambr-s/rustdesk' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'ambr-s/rustdesk') }}
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates clang cmake curl gcc git g++ libclang-dev libgtk-3-dev llvm-dev nasm ninja-build pkg-config wget
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: blacksmith-bridge
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_BRIDGE_VERSION }}
+          cache: true
+
+      - name: Install bridge tools and resolve dependencies
+        shell: bash
+        run: |
+          cargo install cargo-expand --version "$CARGO_EXPAND_VERSION" --locked
+          cargo install flutter_rust_bridge_codegen --version "$FLUTTER_RUST_BRIDGE_VERSION" --features uuid --locked
+          sed -i 's/extended_text: 14.0.0/extended_text: 13.0.0/g' flutter/pubspec.yaml
+          (cd flutter && flutter pub get)
+
+      - name: Generate bridge
+        run: |
+          ~/.cargo/bin/flutter_rust_bridge_codegen \
+            --rust-input ./src/flutter_ffi.rs \
+            --dart-output ./flutter/lib/generated_bridge.dart \
+            --c-output ./flutter/macos/Runner/bridge_generated.h
+          cp ./flutter/macos/Runner/bridge_generated.h ./flutter/ios/Runner/bridge_generated.h
+
+      - name: Verify bridge outputs
+        run: |
+          set -eu
+          for file in \
+            src/bridge_generated.rs \
+            src/bridge_generated.io.rs \
+            flutter/lib/generated_bridge.dart \
+            flutter/lib/generated_bridge.freezed.dart \
+            flutter/macos/Runner/bridge_generated.h \
+            flutter/ios/Runner/bridge_generated.h; do
+            test -s "$file"
+            printf '%s: ' "$file"
+            stat -c '%s bytes' "$file"
+          done
+          cargo fmt --check
+
+      - name: Upload bridge artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: blacksmith-bridge
+          if-no-files-found: error
+          path: |
+            src/bridge_generated.rs
+            src/bridge_generated.io.rs
+            flutter/lib/generated_bridge.dart
+            flutter/lib/generated_bridge.freezed.dart
+            flutter/macos/Runner/bridge_generated.h
+            flutter/ios/Runner/bridge_generated.h
+
+  linux-build:
+    if: ${{ github.repository == 'ambr-s/rustdesk' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'ambr-s/rustdesk') }}
+    needs: generate-bridge
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    env:
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-linux
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: blacksmith-bridge
+          path: ./
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates clang cmake curl dpkg-dev gcc git g++ libayatana-appindicator3-dev libasound2-dev libc6-dev libclang-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-3-dev libpam0g-dev libpulse-dev libva-dev libvdpau-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxdo-dev libxfixes-dev llvm-dev nasm ninja-build pkg-config wget
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_BUILD_VERSION }}
+          cache: true
+
+      - name: Patch Flutter
+        shell: bash
+        run: |
+          flutter_root="$(dirname "$(dirname "$(command -v flutter)")")"
+          git -C "$flutter_root" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: blacksmith-linux
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: ${{ runner.temp }}/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Verify vcpkg and install dependencies
+        shell: bash
+        run: |
+          set -eu
+          test -d "$VCPKG_ROOT" && test -w "$VCPKG_ROOT"
+          "$VCPKG_ROOT/vcpkg" install --triplet x64-linux --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Build Linux desktop
+        run: |
+          export CARGO_INCREMENTAL=0
+          python3 ./build.py --flutter --hwcodec
+        shell: bash
+
+      - name: Verify Linux artifacts
+        shell: bash
+        run: |
+          set -eu
+          test -s "rustdesk-${APP_VERSION}.deb"
+          dpkg-deb --info "rustdesk-${APP_VERSION}.deb"
+          dpkg-deb --contents "rustdesk-${APP_VERSION}.deb" | grep -E 'rustdesk|librustdesk'
+          bundle=flutter/build/linux/x64/release/bundle
+          test -x "$bundle/rustdesk"
+          test -s "$bundle/librustdesk.so"
+          file "$bundle/rustdesk"
+          file "$bundle/librustdesk.so"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: blacksmith-linux-x86_64
+          if-no-files-found: error
+          path: |
+            rustdesk-${{ env.APP_VERSION }}.deb
+            flutter/build/linux/x64/release/bundle/**
+
+  windows-build:
+    if: ${{ github.repository == 'ambr-s/rustdesk' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'ambr-s/rustdesk') }}
+    needs: generate-bridge
+    runs-on: blacksmith-8vcpu-windows-2025
+    env:
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: blacksmith-bridge
+          path: ./
+
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_BUILD_VERSION }}
+          architecture: x64
+          cache: true
+
+      - name: Prepare Windows Flutter engine
+        shell: pwsh
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          $flutterRoot = Split-Path (Split-Path (Get-Command flutter).Source)
+          $engineDir = Join-Path $flutterRoot 'bin\cache\artifacts\engine\windows-x64-release'
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Force windows-x64-release.zip -DestinationPath windows-x64-release
+          New-Item -ItemType Directory -Force $engineDir | Out-Null
+          Copy-Item -Force 'windows-x64-release\*' $engineDir
+          if (-not (Test-Path (Join-Path $engineDir 'flutter_windows.dll'))) { throw 'RustDesk Flutter engine was not installed' }
+
+      - name: Patch Flutter
+        shell: pwsh
+        run: |
+          $flutterRoot = Split-Path (Split-Path (Get-Command flutter).Source)
+          git -C $flutterRoot apply "$env:GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: blacksmith-windows
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
+
+      - name: Probe MSVC tools
+        shell: pwsh
+        run: |
+          $required = @('cl.exe', 'link.exe', 'msbuild.exe', 'vswhere.exe')
+          foreach ($tool in $required) {
+            $resolved = @(where.exe $tool 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $resolved.Count -eq 0) { throw "Required MSVC tool is unavailable: $tool" }
+            Write-Host "$tool -> $($resolved -join '; ')"
+          }
+          $sdkInclude = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\Include" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          $sdkLib = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\Lib" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdkInclude -or -not (Test-Path (Join-Path $sdkInclude.FullName 'um\windows.h'))) { throw 'Windows SDK headers are unavailable' }
+          if (-not $sdkLib -or -not (Test-Path (Join-Path $sdkLib.FullName 'um\x64\kernel32.lib'))) { throw 'Windows SDK x64 libraries are unavailable' }
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: ${{ runner.temp }}\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Verify vcpkg and install dependencies
+        shell: pwsh
+        run: |
+          if (-not (Test-Path $env:VCPKG_ROOT)) { throw "VCPKG_ROOT does not exist: $env:VCPKG_ROOT" }
+          $probe = Join-Path $env:VCPKG_ROOT 'blacksmith-write-test.tmp'
+          'ok' | Set-Content $probe
+          Remove-Item $probe
+          & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
+
+      - name: Build Windows desktop
+        shell: pwsh
+        run: |
+          $env:CARGO_INCREMENTAL = '0'
+          python3 .\build.py --portable --flutter --hwcodec --vram --skip-portable-pack
+          if ($LASTEXITCODE -ne 0) { throw 'build.py failed' }
+
+      - name: Verify Windows artifacts
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'flutter\build\windows\x64\runner\Release'
+          foreach ($file in @('rustdesk.exe', 'flutter_windows.dll')) {
+            $path = Join-Path $bundle $file
+            if (-not (Test-Path $path)) { throw "$file missing from Windows bundle" }
+            $item = Get-Item $path
+            if ($item.Length -le 0) { throw "$file is empty" }
+            Write-Host "$($item.FullName): $($item.Length) bytes"
+          }
+          $dlls = @(Get-ChildItem $bundle -Filter '*.dll')
+          if ($dlls.Count -eq 0) { throw 'Windows bundle contains no plugin DLLs' }
+          Get-ChildItem $bundle | Format-Table Name,Length
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: blacksmith-windows-x86_64
+          if-no-files-found: error
+          path: flutter/build/windows/x64/runner/Release/**
