@@ -374,49 +374,26 @@ jobs:
           )
           $vswhere = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $vswhere) { throw 'vswhere.exe is unavailable' }
-          $product = 'Microsoft.VisualStudio.Product.BuildTools'
-          $installation = & $vswhere -latest -products $product -property installationPath | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while probing Visual Studio Build Tools' }
-          if (-not $installation) {
-            $bootstrapper = Join-Path $env:RUNNER_TEMP 'vs_BuildTools-17.14.36.exe'
-            $bootstrapperUrl = 'https://download.visualstudio.microsoft.com/download/pr/12aa1305-dd17-4f26-8429-d072cda64c80/5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7/vs_BuildTools.exe'
-            Invoke-WebRequest -Uri $bootstrapperUrl -OutFile $bootstrapper
-            $bootstrapperFile = Get-Item $bootstrapper
-            if ($bootstrapperFile.Length -ne 4458264) { throw "Unexpected Visual Studio Build Tools bootstrapper size: $($bootstrapperFile.Length)" }
-            $bootstrapperHash = (Get-FileHash $bootstrapper -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($bootstrapperHash -ne '5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7') { throw "Unexpected Visual Studio Build Tools bootstrapper SHA-256: $bootstrapperHash" }
-            $installPath = 'C:\BuildTools'
-            $arguments = @(
-              '--quiet', '--wait', '--norestart', '--nocache',
-              '--installPath', "`"$installPath`"",
-              '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'
-            )
-            $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru -NoNewWindow
-            if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
-            $installation = & $vswhere -latest -products $product -property installationPath | Select-Object -First 1
-            if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'Pinned Visual Studio Build Tools installation was not registered' }
-          }
+          $installPath = 'C:\BuildTools'
+          $bootstrapper = Join-Path $env:RUNNER_TEMP 'vs_BuildTools-17.14.36.exe'
+          $bootstrapperUrl = 'https://download.visualstudio.microsoft.com/download/pr/12aa1305-dd17-4f26-8429-d072cda64c80/5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7/vs_BuildTools.exe'
+          Invoke-WebRequest -Uri $bootstrapperUrl -OutFile $bootstrapper
+          $bootstrapperFile = Get-Item $bootstrapper
+          if ($bootstrapperFile.Length -ne 4458264) { throw "Unexpected Visual Studio Build Tools bootstrapper size: $($bootstrapperFile.Length)" }
+          $bootstrapperHash = (Get-FileHash $bootstrapper -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($bootstrapperHash -ne '5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7') { throw "Unexpected Visual Studio Build Tools bootstrapper SHA-256: $bootstrapperHash" }
+          $arguments = @(
+            '--quiet', '--wait', '--norestart', '--nocache',
+            '--installPath', "`"$installPath`"",
+            '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'
+          )
+          $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
+          $vcInstallations = @(& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while verifying MSVC x64' }
+          $installation = $vcInstallations | Where-Object { $_ -and ([IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -eq [IO.Path]::GetFullPath($installPath).TrimEnd('\')) } | Select-Object -First 1
+          if (-not $installation) { throw "Pinned C++ Build Tools installation was not registered at $installPath" }
           $installation = $installation.Trim()
-          $vcInstallation = & $vswhere -latest -products $product -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while probing MSVC x64' }
-          if (-not $vcInstallation) {
-            $installerCandidates = @(
-              (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'),
-              (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vs_installer.exe')
-            )
-            $installer = $installerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (-not $installer) { throw 'Visual Studio Installer is unavailable' }
-            $arguments = @(
-              'modify', '--installPath', "`"$installation`"",
-              '--add', 'Microsoft.VisualStudio.Workload.VCTools',
-              '--includeRecommended', '--quiet', '--norestart', '--nocache'
-            )
-            $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -NoNewWindow
-            if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio C++ workload installation failed with exit code $($process.ExitCode)" }
-            $vcInstallation = & $vswhere -latest -products $product -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
-            if ($LASTEXITCODE -ne 0 -or -not $vcInstallation) { throw 'Visual Studio Installer completed without provisioning MSVC x64' }
-          }
-          $installation = $vcInstallation.Trim()
           $devCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
           if (-not (Test-Path $devCmd)) { throw "VsDevCmd.bat is unavailable: $devCmd" }
           $environmentLines = & $env:ComSpec /d /s /c "`"$devCmd`" -no_logo -arch=x64 -host_arch=x64 && set"
