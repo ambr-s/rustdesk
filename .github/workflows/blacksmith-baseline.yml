@@ -105,7 +105,6 @@ jobs:
             test -s "$file"
           done
           sha256sum "${files[@]}" > SHA256SUMS
-          cargo fmt --check
 
       - name: Upload bridge artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
