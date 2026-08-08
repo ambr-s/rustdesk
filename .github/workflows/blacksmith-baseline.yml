@@ -223,9 +223,9 @@ jobs:
           dpkg-deb --contents "rustdesk-${APP_VERSION}.deb" | grep -E 'rustdesk|librustdesk'
           bundle=flutter/build/linux/x64/release/bundle
           test -x "$bundle/rustdesk"
-          test -s "$bundle/librustdesk.so"
+          test -s "$bundle/lib/librustdesk.so"
           test "$(file -b "$bundle/rustdesk")" = 'ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV)' || file "$bundle/rustdesk" | grep -q 'ELF 64-bit.*x86-64'
-          file "$bundle/librustdesk.so" | grep -q 'ELF 64-bit.*x86-64'
+          file "$bundle/lib/librustdesk.so" | grep -q 'ELF 64-bit.*x86-64'
           (cd "$bundle" && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
           source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
           tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owner \
@@ -345,13 +345,43 @@ jobs:
           prefix-key: blacksmith-windows
           save-if: ${{ github.event_name != 'pull_request' }}
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
-
       - name: Setup MSVC developer command prompt
-        uses: ilammy/msvc-dev-cmd@460a772e4cf7358f9f2f23773240813e40e7a894 # v1
-        with:
-          arch: x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $candidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+            (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+          )
+          $vswhere = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $vswhere) { throw 'vswhere.exe is unavailable' }
+          $installation = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'Visual Studio Build Tools with MSVC x64 are unavailable' }
+          $devCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path $devCmd)) { throw "VsDevCmd.bat is unavailable: $devCmd" }
+          $environmentLines = & $env:ComSpec /d /s /c "`"$devCmd`" -no_logo -arch=x64 -host_arch=x64 && set"
+          if ($LASTEXITCODE -ne 0) { throw 'VsDevCmd.bat failed' }
+          $developerEnvironment = @{}
+          foreach ($line in $environmentLines) {
+            $separator = $line.IndexOf('=')
+            if ($separator -gt 0) {
+              $developerEnvironment[$line.Substring(0, $separator)] = $line.Substring($separator + 1)
+            }
+          }
+          $required = @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCToolsInstallDir', 'VCINSTALLDIR', 'VSINSTALLDIR', 'WindowsSdkDir', 'WindowsSDKVersion')
+          foreach ($name in $required) {
+            if (-not $developerEnvironment.ContainsKey($name) -or -not $developerEnvironment[$name]) {
+              throw "VsDevCmd.bat did not provide $name"
+            }
+          }
+          $exports = $required + @('ExtensionSdkDir', 'Framework40Version', 'FrameworkDir', 'FrameworkVersion', 'FrameworkVersion64', 'NETFXSDKDir', 'UCRTVersion', 'UniversalCRTSdkDir', 'VSCMD_ARG_HOST_ARCH', 'VSCMD_ARG_TGT_ARCH', 'VSCMD_VER', 'VisualStudioVersion', 'WindowsSdkBinPath', 'WindowsSDKLibVersion')
+          foreach ($name in $exports) {
+            if ($developerEnvironment.ContainsKey($name)) {
+              "$name=$($developerEnvironment[$name])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+          Write-Host "Visual Studio Build Tools -> $installation"
 
       - name: Probe MSVC tools and selected Windows SDK
         shell: pwsh
