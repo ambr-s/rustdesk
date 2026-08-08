@@ -52,7 +52,7 @@ Each phase should be a small, reviewable issue/PR series. Dependencies are expli
 
 **PRs:** keep driver changes, Rust integration, packaging/signing, and runtime tests separately reviewable. Do not make the production default until real Windows evidence exists.
 
-**Exit:** Windows runtime matrix passes on `blacksmith-8vcpu-windows-2025` plus a real Windows validation host; driver licence and redistribution review is complete.
+**Exit:** package and build validation passes on `blacksmith-8vcpu-windows-2025`, the runtime matrix passes on a real Windows host or VM, and driver licence and redistribution review is complete.
 
 ## Phase 5 — source-built Flatpak and CI
 

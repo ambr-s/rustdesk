@@ -18,7 +18,7 @@ This is an engineering policy, not legal advice. The release owner must obtain l
 
 ## Third-party driver risks
 
-- The checked-in RustDesk IDD source is reported by inventory as MS-PL; verify the exact files, notices, patent terms, and redistribution obligations before packaging.
+- Verify the checked-in RustDesk IDD source's licence, exact covered files, notices, patent terms, provenance, and redistribution obligations before packaging; do not infer its licence from adjacent project metadata.
 - Amyuni/`usbmmidd_v2` rights and redistribution terms must be verified before retaining or migrating its package.
 - An alternative such as `parsec-vdd` may have permissive source metadata, but signed binaries, bundled components, trademarks, and source/build provenance require independent review.
 - Every driver release needs a machine-readable third-party inventory, licence notices, source revisions, checksums, and an ownership decision for updates.
