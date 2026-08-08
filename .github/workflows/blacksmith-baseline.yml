@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/blacksmith-baseline.yml"
+      - ".github/workflows/ci.yml"
       - ".github/workflows/flutter-ci.yml"
       - ".github/patches/**"
       - ".cargo/**"
