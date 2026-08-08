@@ -36,7 +36,6 @@ env:
   LLVM_VERSION: "15.0.6"
   RUST_VERSION: "1.75"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
-  VCPKG_BINARY_SOURCES: "clear;x-gha,${{ github.event_name == 'pull_request' && 'read' || 'readwrite' }}"
 
 jobs:
   generate-bridge:
@@ -127,6 +126,8 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2404
     env:
       VCPKG_DEFAULT_HOST_TRIPLET: x64-linux
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binary-x64-linux
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg-binary-x64-linux,readwrite
     steps:
       - name: Checkout source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -183,24 +184,28 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
 
-      - name: Export GitHub Actions cache environment
-        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+      # Blacksmith transparently redirects the official cache action to its colocated cache.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          script: |
-            if (!process.env.ACTIONS_CACHE_URL || !process.env.ACTIONS_RUNTIME_TOKEN) {
-              core.setFailed('ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN are required for vcpkg x-gha caching');
-              return;
-            }
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL);
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_DEFAULT_HOST_TRIPLET }}-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'res/vcpkg/**', 'res/vcpkg-triplets/**') }}
 
       - name: Verify vcpkg and install dependencies
         shell: bash
         run: |
           set -eu
           test -d "$VCPKG_ROOT" && test -w "$VCPKG_ROOT"
-          test -n "${ACTIONS_CACHE_URL:-}" && test -n "${ACTIONS_RUNTIME_TOKEN:-}"
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
           "$VCPKG_ROOT/vcpkg" install --triplet x64-linux --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Save vcpkg binary cache
+        if: ${{ github.event_name != 'pull_request' && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build Linux desktop
         shell: bash
@@ -222,7 +227,10 @@ jobs:
           test "$(file -b "$bundle/rustdesk")" = 'ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV)' || file "$bundle/rustdesk" | grep -q 'ELF 64-bit.*x86-64'
           file "$bundle/librustdesk.so" | grep -q 'ELF 64-bit.*x86-64'
           (cd "$bundle" && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
-          tar -cJf "rustdesk-${APP_VERSION}-linux-x86_64-bundle.tar.xz" -C "$bundle" .
+          source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owner \
+            --mode='u+rwX,go+rX,go-w' --pax-option=delete=atime,delete=ctime \
+            -cJf "rustdesk-${APP_VERSION}-linux-x86_64-bundle.tar.xz" -C "$bundle" .
           sha256sum "rustdesk-${APP_VERSION}.deb" "rustdesk-${APP_VERSION}-linux-x86_64-bundle.tar.xz" > SHA256SUMS
           sha256sum -c SHA256SUMS
 
@@ -242,6 +250,8 @@ jobs:
     runs-on: blacksmith-8vcpu-windows-2025
     env:
       VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg-binary-x64-windows-static
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg-binary-x64-windows-static,readwrite
     steps:
       - name: Checkout source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -379,16 +389,13 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
 
-      - name: Export GitHub Actions cache environment
-        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+      # Blacksmith transparently redirects the official cache action to its colocated cache.
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          script: |
-            if (!process.env.ACTIONS_CACHE_URL || !process.env.ACTIONS_RUNTIME_TOKEN) {
-              core.setFailed('ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN are required for vcpkg x-gha caching');
-              return;
-            }
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL);
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_DEFAULT_HOST_TRIPLET }}-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'res/vcpkg/**', 'res/vcpkg-triplets/**') }}
 
       - name: Verify vcpkg and install dependencies
         shell: pwsh
@@ -399,9 +406,16 @@ jobs:
           $probe = Join-Path $env:VCPKG_ROOT 'blacksmith-write-test.tmp'
           'ok' | Set-Content $probe
           Remove-Item $probe
-          if (-not $env:ACTIONS_CACHE_URL -or -not $env:ACTIONS_RUNTIME_TOKEN) { throw 'GitHub Actions cache environment is missing' }
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
+
+      - name: Save vcpkg binary cache
+        if: ${{ github.event_name != 'pull_request' && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build Windows desktop
         shell: pwsh
@@ -442,9 +456,29 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.FullName.Substring($bundle.Length + 1))"
           } | Set-Content $manifest
-          $zip = Join-Path $PWD 'rustdesk-1.4.9-windows-x86_64-bundle.zip'
+          $zip = Join-Path $PWD "rustdesk-$env:APP_VERSION-windows-x86_64-bundle.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sourceDateEpoch = & git show -s --format=%ct $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Could not derive SOURCE_DATE_EPOCH from the build commit' }
+          $fixedTime = [DateTimeOffset]::FromUnixTimeSeconds([long]$sourceDateEpoch)
+          Add-Type -AssemblyName System.IO.Compression
+          $zipStream = [IO.File]::Open($zip, [IO.FileMode]::CreateNew)
+          $archive = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false)
+          try {
+            Get-ChildItem -Path $bundle -File -Recurse | Sort-Object FullName | ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath($bundle, $_.FullName).Replace('\', '/')
+              $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal)
+              $entry.LastWriteTime = $fixedTime
+              $entry.ExternalAttributes = 0
+              $inputStream = $_.OpenRead()
+              $outputStream = $entry.Open()
+              try { $inputStream.CopyTo($outputStream) }
+              finally { $outputStream.Dispose(); $inputStream.Dispose() }
+            }
+          } finally {
+            $archive.Dispose()
+            $zipStream.Dispose()
+          }
           $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$zipHash  $(Split-Path $zip -Leaf)" | Set-Content SHA256SUMS
           if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $zipHash) { throw 'Windows package checksum verification failed' }
@@ -455,5 +489,5 @@ jobs:
           name: blacksmith-windows-x86_64
           if-no-files-found: error
           path: |
-            rustdesk-1.4.9-windows-x86_64-bundle.zip
+            rustdesk-${{ env.APP_VERSION }}-windows-x86_64-bundle.zip
             SHA256SUMS
