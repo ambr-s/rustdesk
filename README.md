@@ -23,6 +23,8 @@ Yet another remote desktop solution, written in Rust. Works out of the box with 
 
 RustDesk welcomes contribution from everyone. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for help getting started.
 
+> **Fork notice:** The controller-focused fork specification and implementation roadmap are maintained in [`docs/fork/`](docs/fork/README.md). It documents proposed requirements and verification gates; it does not replace the upstream RustDesk documentation.
+
 [**FAQ**](https://github.com/rustdesk/rustdesk/wiki/FAQ)
 
 [**BINARY DOWNLOAD**](https://github.com/rustdesk/rustdesk/releases)
