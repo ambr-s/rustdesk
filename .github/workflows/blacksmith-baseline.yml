@@ -163,7 +163,15 @@ jobs:
         run: |
           set -eu
           flutter_root="$(dirname "$(dirname "$(command -v flutter)")")"
-          git -C "$flutter_root" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          patch="$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          if git -C "$flutter_root" apply --check "$patch"; then
+            git -C "$flutter_root" apply "$patch"
+          elif git -C "$flutter_root" apply --reverse --check "$patch"; then
+            echo 'Flutter patch is already applied'
+          else
+            echo 'Flutter patch is neither applicable nor already applied' >&2
+            exit 1
+          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -326,11 +334,20 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
+          # A failed forward applicability probe is expected when the cached SDK is already patched.
+          $PSNativeCommandUseErrorActionPreference = $false
           $flutterCommand = Get-Command flutter -ErrorAction Stop
           $flutterRoot = Split-Path (Split-Path $flutterCommand.Source)
-          & git -C $flutterRoot apply "$env:GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
-          if ($LASTEXITCODE -ne 0) { throw 'git apply failed' }
+          $patch = "$env:GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          & git -C $flutterRoot apply --check $patch 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            & git -C $flutterRoot apply $patch
+            if ($LASTEXITCODE -ne 0) { throw 'git apply failed' }
+          } else {
+            & git -C $flutterRoot apply --reverse --check $patch 2>$null
+            if ($LASTEXITCODE -ne 0) { throw 'Flutter patch is neither applicable nor already applied' }
+            Write-Host 'Flutter patch is already applied'
+          }
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -357,10 +374,30 @@ jobs:
           )
           $vswhere = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $vswhere) { throw 'vswhere.exe is unavailable' }
-          $installation = & $vswhere -latest -products '*' -property installationPath | Select-Object -First 1
-          if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'Visual Studio Build Tools are unavailable' }
+          $product = 'Microsoft.VisualStudio.Product.BuildTools'
+          $installation = & $vswhere -latest -products $product -property installationPath | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while probing Visual Studio Build Tools' }
+          if (-not $installation) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP 'vs_BuildTools-17.14.36.exe'
+            $bootstrapperUrl = 'https://download.visualstudio.microsoft.com/download/pr/12aa1305-dd17-4f26-8429-d072cda64c80/5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7/vs_BuildTools.exe'
+            Invoke-WebRequest -Uri $bootstrapperUrl -OutFile $bootstrapper
+            $bootstrapperFile = Get-Item $bootstrapper
+            if ($bootstrapperFile.Length -ne 4458264) { throw "Unexpected Visual Studio Build Tools bootstrapper size: $($bootstrapperFile.Length)" }
+            $bootstrapperHash = (Get-FileHash $bootstrapper -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($bootstrapperHash -ne '5ae95bb02bb3442441a8d891e5bb1d2975445e2e3ee16ada5bc7bd17227f1dd7') { throw "Unexpected Visual Studio Build Tools bootstrapper SHA-256: $bootstrapperHash" }
+            $installPath = 'C:\BuildTools'
+            $arguments = @(
+              '--quiet', '--wait', '--norestart', '--nocache',
+              '--installPath', "`"$installPath`"",
+              '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'
+            )
+            $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
+            $installation = & $vswhere -latest -products $product -property installationPath | Select-Object -First 1
+            if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'Pinned Visual Studio Build Tools installation was not registered' }
+          }
           $installation = $installation.Trim()
-          $vcInstallation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          $vcInstallation = & $vswhere -latest -products $product -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
           if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while probing MSVC x64' }
           if (-not $vcInstallation) {
             $installerCandidates = @(
@@ -376,7 +413,7 @@ jobs:
             )
             $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -NoNewWindow
             if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio C++ workload installation failed with exit code $($process.ExitCode)" }
-            $vcInstallation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+            $vcInstallation = & $vswhere -latest -products $product -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
             if ($LASTEXITCODE -ne 0 -or -not $vcInstallation) { throw 'Visual Studio Installer completed without provisioning MSVC x64' }
           }
           $installation = $vcInstallation.Trim()
