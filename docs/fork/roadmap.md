@@ -4,11 +4,11 @@ Each phase should be a small, reviewable issue/PR series. Dependencies are expli
 
 ## Phase 0 — inventory and decisions
 
-**Issues:** freeze current upstream base; map host/client module edges; inspect IDD cursor callbacks; inventory Flatpak sources/permissions; identify licence and signing owners.
+**Issues:** freeze current upstream base; map host/client module edges; inspect IDD cursor callbacks; inventory Flatpak sources/permissions; identify licence and signing owners; add focused baseline Blacksmith Windows/Linux CI on `blacksmith-8vcpu-windows-2025` and `blacksmith-8vcpu-ubuntu-2404` for locked builds and documentation checks.
 
-**PR:** documentation and test-plan updates only.
+**PR:** documentation, test-plan, and focused baseline CI setup updates only.
 
-**Exit:** decisions recorded for feature names, controller entrypoint, IDD strategy, Flatpak source pins, and evidence storage. No feature is declared complete from static inspection alone.
+**Exit:** decisions recorded for feature names, controller entrypoint, IDD strategy, Flatpak source pins, and evidence storage; focused baseline Linux/Windows CI is green and provides the initial build/test evidence path. No feature is declared complete from static inspection alone.
 
 ## Phase 1 — capability spikes
 
@@ -58,9 +58,9 @@ Each phase should be a small, reviewable issue/PR series. Dependencies are expli
 
 **Depends on:** Phase 2 controller boundary; Phase 3 runtime behavior; pinned source/build inputs.
 
-**Issues:** source-built manifest with app ID `ch.flourish.RustDeskController`; permission audit; SBOM/checksums/provenance; Blacksmith build jobs; artifact forbidden-module/listener checks.
+**Issues:** source-built manifest with app ID `ch.flourish.RustDeskController`; permission audit; SBOM/checksums/provenance; expand the focused baseline into feature-matrix, sandbox, Flatpak, artifact, and release CI; artifact forbidden-module/listener checks.
 
-**PRs:** manifest/build definition, CI validation, and release metadata should be independently reviewed. This roadmap deliberately does not add workflows in the specification commit.
+**PRs:** manifest/build definition, feature-matrix/Flatpak CI expansion, and release metadata should be independently reviewed. The focused baseline CI belongs in Phase 0; this phase expands it rather than introducing the first CI coverage.
 
 **Exit:** clean build using `blacksmith-8vcpu-ubuntu-2404`; Flatpak sandbox/runtime evidence; artifact contents and permissions match the matrix.
 

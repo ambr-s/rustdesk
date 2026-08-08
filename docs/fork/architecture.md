@@ -13,7 +13,7 @@ Introduce a reviewed feature topology with a controller-only feature and host-se
 - `src/service.rs` is not built or packaged for controller artifacts;
 - `core_main` and platform startup cannot call host service functions in controller builds.
 
-The dependency graph, not string scanning, is the authoritative proof. Existing `scrap` functionality may need a decode-only boundary so controller builds do not compile capture backends, PipeWire, DRM, X11, or uinput.
+The dependency graph, not string scanning, is the authoritative proof. Existing `scrap` functionality may need a decode-only boundary so controller builds do not compile capture backends, PipeWire, DRM/KMS capture, X11, or uinput.
 
 ### Flutter boundary
 
@@ -27,7 +27,9 @@ Keep monitor indexing and per-monitor mode updates stable. Treat Amyuni migratio
 
 ## Dynamic viewport resolution
 
-Reuse the existing display-resolution protocol initially. The client should observe the remote canvas viewport, convert logical Flutter dimensions using the local view DPR, clamp and debounce requests, and suppress no-op/stale/feedback-loop updates. Gate automatic matching to an enabled user preference and a compatible managed virtual display. Add a protocol capability/ack only if existing `ChangeDisplayResolution` behavior cannot provide reliable generation and acknowledgement semantics.
+Reuse the existing display-resolution protocol initially, with Remmina-style semantics. When enabled for a peer, the usable remote-canvas logical width and height multiplied by the local view DPR are the requested remote managed-virtual-display pixel width and height. Round to positive even dimensions, clamp to negotiated/driver bounds, and preserve the normal scale/fit policy when matching is disabled or unsupported. Keep the preference default off per peer and gate it on a compatible managed virtual display plus a negotiated capability.
+
+The resize controller must debounce viewport, DPR, fullscreen, maximise, monitor, and DPI changes; resynchronize after each such transition; and suppress requests whose dimensions are within the documented no-op threshold or equal to the acknowledged size. Track request generations, ignore stale acknowledgements, and do not treat an echoed remote mode as a new viewport request. This prevents resize feedback loops and redundant updates. Add a protocol capability/ack only if existing `ChangeDisplayResolution` behavior cannot provide reliable generation and acknowledgement semantics.
 
 ## Keyboard routing
 
@@ -37,7 +39,7 @@ On GNOME Wayland, treat native global-grab behavior as a runtime capability to v
 
 ## Flatpak boundary
 
-Create a dedicated source-built manifest for `ch.flourish.RustDeskController`. Pin source revisions and checksums, build Rust and Flutter from source, install only the controller bundle and metadata, and omit host helpers, systemd units, installer scripts, PAM, xdotool, and capture helpers. Start with Wayland, IPC, network, PulseAudio, and the narrowest filesystem scope current file transfer can support. Any additional permission requires a demonstrated runtime need and review.
+Create a dedicated source-built manifest for `ch.flourish.RustDeskController`. Pin source revisions and checksums, build Rust and Flutter from source, install only the controller bundle and metadata, and omit host helpers, systemd units, installer scripts, PAM, xdotool, local input-injection functionality/dependencies, and capture helpers. Start with Wayland, IPC, network, PulseAudio, and narrowly required DRI GPU access for decode/render only. Do not grant home/host filesystem permissions; use document/file-picker portals for user-selected imports/exports, screenshots, recordings, and file transfer. Prohibit X11, ScreenCast and RemoteDesktop portal/session permissions, the system bus, Flatpak control, DRM/KMS or PipeWire capture, and uinput/evdev. Controller-side screenshots and recordings refer to the remote display and remain supported; no local host capture is allowed. Any additional permission requires a demonstrated runtime need and review.
 
 ## Deliberate non-claims
 
