@@ -363,7 +363,7 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Setup MSVC developer command prompt
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -385,7 +385,9 @@ jobs:
           $arguments = @(
             '--quiet', '--wait', '--norestart', '--nocache',
             '--installPath', "`"$installPath`"",
-            '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'
+            '--add', 'Microsoft.Component.MSBuild',
+            '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+            '--add', 'Microsoft.VisualStudio.Component.Windows11SDK.26100'
           )
           $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
