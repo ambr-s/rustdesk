@@ -6,21 +6,22 @@ on:
     paths:
       - ".github/workflows/blacksmith-baseline.yml"
       - ".github/workflows/flutter-ci.yml"
+      - ".github/patches/**"
+      - ".cargo/**"
+      - "rust-toolchain*"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.py"
       - "src/**"
       - "libs/**"
       - "flutter/**"
+      - "res/**"
       - "vcpkg.json"
-      - "res/vcpkg/**"
-      - "res/vcpkg-triplets/**"
   push:
     branches: [master]
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: blacksmith-baseline-${{ github.workflow }}-${{ github.ref }}
@@ -35,7 +36,7 @@ env:
   LLVM_VERSION: "15.0.6"
   RUST_VERSION: "1.75"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
-  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,${{ github.event_name == 'pull_request' && 'read' || 'readwrite' }}"
 
 jobs:
   generate-bridge:
@@ -62,6 +63,7 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           prefix-key: blacksmith-bridge
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Install Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
@@ -73,6 +75,7 @@ jobs:
       - name: Install bridge tools and resolve dependencies
         shell: bash
         run: |
+          set -eu
           cargo install cargo-expand --version "$CARGO_EXPAND_VERSION" --locked
           cargo install flutter_rust_bridge_codegen --version "$FLUTTER_RUST_BRIDGE_VERSION" --features uuid --locked
           sed -i 's/extended_text: 14.0.0/extended_text: 13.0.0/g' flutter/pubspec.yaml
@@ -86,20 +89,22 @@ jobs:
             --c-output ./flutter/macos/Runner/bridge_generated.h
           cp ./flutter/macos/Runner/bridge_generated.h ./flutter/ios/Runner/bridge_generated.h
 
-      - name: Verify bridge outputs
+      - name: Verify bridge outputs and write checksums
+        shell: bash
         run: |
           set -eu
-          for file in \
-            src/bridge_generated.rs \
-            src/bridge_generated.io.rs \
-            flutter/lib/generated_bridge.dart \
-            flutter/lib/generated_bridge.freezed.dart \
-            flutter/macos/Runner/bridge_generated.h \
-            flutter/ios/Runner/bridge_generated.h; do
+          files=(
+            src/bridge_generated.rs
+            src/bridge_generated.io.rs
+            flutter/lib/generated_bridge.dart
+            flutter/lib/generated_bridge.freezed.dart
+            flutter/macos/Runner/bridge_generated.h
+            flutter/ios/Runner/bridge_generated.h
+          )
+          for file in "${files[@]}"; do
             test -s "$file"
-            printf '%s: ' "$file"
-            stat -c '%s bytes' "$file"
           done
+          sha256sum "${files[@]}" > SHA256SUMS
           cargo fmt --check
 
       - name: Upload bridge artifact
@@ -114,6 +119,7 @@ jobs:
             flutter/lib/generated_bridge.freezed.dart
             flutter/macos/Runner/bridge_generated.h
             flutter/ios/Runner/bridge_generated.h
+            SHA256SUMS
 
   linux-build:
     if: ${{ github.repository == 'ambr-s/rustdesk' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'ambr-s/rustdesk') }}
@@ -133,6 +139,12 @@ jobs:
           name: blacksmith-bridge
           path: ./
 
+      - name: Verify bridge artifact
+        shell: bash
+        run: |
+          set -eu
+          sha256sum -c SHA256SUMS
+
       - name: Install prerequisites
         run: |
           sudo apt-get update
@@ -148,6 +160,7 @@ jobs:
       - name: Patch Flutter
         shell: bash
         run: |
+          set -eu
           flutter_root="$(dirname "$(dirname "$(command -v flutter)")")"
           git -C "$flutter_root" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
 
@@ -161,6 +174,7 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           prefix-key: blacksmith-linux
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
@@ -169,20 +183,33 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
 
+      - name: Export GitHub Actions cache environment
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            if (!process.env.ACTIONS_CACHE_URL || !process.env.ACTIONS_RUNTIME_TOKEN) {
+              core.setFailed('ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN are required for vcpkg x-gha caching');
+              return;
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+
       - name: Verify vcpkg and install dependencies
         shell: bash
         run: |
           set -eu
           test -d "$VCPKG_ROOT" && test -w "$VCPKG_ROOT"
+          test -n "${ACTIONS_CACHE_URL:-}" && test -n "${ACTIONS_RUNTIME_TOKEN:-}"
           "$VCPKG_ROOT/vcpkg" install --triplet x64-linux --x-install-root="$VCPKG_ROOT/installed"
 
       - name: Build Linux desktop
+        shell: bash
         run: |
+          set -eu
           export CARGO_INCREMENTAL=0
           python3 ./build.py --flutter --hwcodec
-        shell: bash
 
-      - name: Verify Linux artifacts
+      - name: Package and verify Linux artifacts
         shell: bash
         run: |
           set -eu
@@ -192,8 +219,12 @@ jobs:
           bundle=flutter/build/linux/x64/release/bundle
           test -x "$bundle/rustdesk"
           test -s "$bundle/librustdesk.so"
-          file "$bundle/rustdesk"
-          file "$bundle/librustdesk.so"
+          test "$(file -b "$bundle/rustdesk")" = 'ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV)' || file "$bundle/rustdesk" | grep -q 'ELF 64-bit.*x86-64'
+          file "$bundle/librustdesk.so" | grep -q 'ELF 64-bit.*x86-64'
+          (cd "$bundle" && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
+          tar -cJf "rustdesk-${APP_VERSION}-linux-x86_64-bundle.tar.xz" -C "$bundle" .
+          sha256sum "rustdesk-${APP_VERSION}.deb" "rustdesk-${APP_VERSION}-linux-x86_64-bundle.tar.xz" > SHA256SUMS
+          sha256sum -c SHA256SUMS
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -202,7 +233,8 @@ jobs:
           if-no-files-found: error
           path: |
             rustdesk-${{ env.APP_VERSION }}.deb
-            flutter/build/linux/x64/release/bundle/**
+            rustdesk-${{ env.APP_VERSION }}-linux-x86_64-bundle.tar.xz
+            SHA256SUMS
 
   windows-build:
     if: ${{ github.repository == 'ambr-s/rustdesk' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'ambr-s/rustdesk') }}
@@ -222,6 +254,20 @@ jobs:
           name: blacksmith-bridge
           path: ./
 
+      - name: Verify bridge artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($line in Get-Content SHA256SUMS) {
+            $parts = $line -split '\s+', 2
+            if ($parts.Count -ne 2) { throw "Invalid bridge checksum line: $line" }
+            $path = $parts[1].TrimStart('*')
+            if (-not (Test-Path $path)) { throw "Bridge file is missing: $path" }
+            $actual = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $parts[0].ToLowerInvariant()) { throw "Bridge checksum mismatch: $path" }
+          }
+
       - name: Install LLVM
         uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2
         with:
@@ -238,21 +284,43 @@ jobs:
       - name: Prepare Windows Flutter engine
         shell: pwsh
         run: |
-          flutter doctor -v
-          flutter precache --windows
-          $flutterRoot = Split-Path (Split-Path (Get-Command flutter).Source)
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          function Invoke-Native([string]$File, [string[]]$Arguments) {
+            & $File @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "$File failed with exit code $LASTEXITCODE" }
+          }
+          Invoke-Native 'flutter' @('doctor', '-v')
+          Invoke-Native 'flutter' @('precache', '--windows')
+          $flutterCommand = Get-Command flutter -ErrorAction Stop
+          $flutterRoot = Split-Path (Split-Path $flutterCommand.Source)
           $engineDir = Join-Path $flutterRoot 'bin\cache\artifacts\engine\windows-x64-release'
-          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          $assetUrl = 'https://api.github.com/repos/rustdesk/engine/releases/assets/210168939'
+          $headers = @{ Accept = 'application/octet-stream'; 'User-Agent' = 'rustdesk-blacksmith-ci' }
+          Invoke-WebRequest -Uri $assetUrl -Headers $headers -OutFile windows-x64-release.zip
+          $asset = Get-Item windows-x64-release.zip
+          if ($asset.Length -ne 63301215) { throw "Unexpected engine asset size: $($asset.Length)" }
+          $engineHash = (Get-FileHash windows-x64-release.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($engineHash -ne 'ec8cabf36ee4ff24c8d98de25b00e70781eb03876265aee84d0fe554a110036e') { throw "Unexpected engine asset SHA-256: $engineHash" }
+          if (Test-Path windows-x64-release) { Remove-Item -Recurse -Force windows-x64-release }
           Expand-Archive -Force windows-x64-release.zip -DestinationPath windows-x64-release
           New-Item -ItemType Directory -Force $engineDir | Out-Null
           Copy-Item -Force 'windows-x64-release\*' $engineDir
-          if (-not (Test-Path (Join-Path $engineDir 'flutter_windows.dll'))) { throw 'RustDesk Flutter engine was not installed' }
+          $customEngine = Join-Path $engineDir 'flutter_windows.dll'
+          if (-not (Test-Path $customEngine)) { throw 'RustDesk Flutter engine was not installed' }
+          $customEngineHash = (Get-FileHash $customEngine -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path custom-engine.sha256 -Value "$customEngineHash  flutter_windows.dll"
+          Write-Host "Custom flutter_windows.dll SHA-256: $customEngineHash"
 
       - name: Patch Flutter
         shell: pwsh
         run: |
-          $flutterRoot = Split-Path (Split-Path (Get-Command flutter).Source)
-          git -C $flutterRoot apply "$env:GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $flutterCommand = Get-Command flutter -ErrorAction Stop
+          $flutterRoot = Split-Path (Split-Path $flutterCommand.Source)
+          & git -C $flutterRoot apply "$env:GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          if ($LASTEXITCODE -ne 0) { throw 'git apply failed' }
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -265,23 +333,44 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           prefix-key: blacksmith-windows
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
 
-      - name: Probe MSVC tools
+      - name: Setup MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@460a772e4cf7358f9f2f23773240813e40e7a894 # v1
+        with:
+          arch: x64
+
+      - name: Probe MSVC tools and selected Windows SDK
         shell: pwsh
         run: |
-          $required = @('cl.exe', 'link.exe', 'msbuild.exe', 'vswhere.exe')
-          foreach ($tool in $required) {
-            $resolved = @(where.exe $tool 2>$null)
-            if ($LASTEXITCODE -ne 0 -or $resolved.Count -eq 0) { throw "Required MSVC tool is unavailable: $tool" }
-            Write-Host "$tool -> $($resolved -join '; ')"
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($tool in @('cl.exe', 'link.exe', 'msbuild.exe')) {
+            $resolved = Get-Command $tool -ErrorAction SilentlyContinue
+            if (-not $resolved) { throw "Required MSVC tool is unavailable: $tool" }
+            Write-Host "$tool -> $($resolved.Source)"
           }
-          $sdkInclude = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\Include" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-          $sdkLib = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\Lib" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $sdkInclude -or -not (Test-Path (Join-Path $sdkInclude.FullName 'um\windows.h'))) { throw 'Windows SDK headers are unavailable' }
-          if (-not $sdkLib -or -not (Test-Path (Join-Path $sdkLib.FullName 'um\x64\kernel32.lib'))) { throw 'Windows SDK x64 libraries are unavailable' }
+          $vswhere = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+          if (-not $vswhere) {
+            $candidates = @(
+              (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+              (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+            )
+            $vswherePath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          } else { $vswherePath = $vswhere.Source }
+          if (-not $vswherePath) { throw 'vswhere.exe is unavailable' }
+          Write-Host "vswhere.exe -> $vswherePath"
+          if (-not $env:WindowsSdkDir -or -not $env:WindowsSDKVersion) { throw 'MSVC action did not select a Windows SDK' }
+          $sdkRoot = $env:WindowsSdkDir.TrimEnd('\')
+          $sdkVersion = $env:WindowsSDKVersion.Trim('\')
+          $sdkInclude = Join-Path $sdkRoot "Include\$sdkVersion"
+          $sdkLib = Join-Path $sdkRoot "Lib\$sdkVersion"
+          if (-not (Test-Path (Join-Path $sdkInclude 'um\windows.h'))) { throw "Selected Windows SDK headers are unavailable: $sdkInclude" }
+          if (-not (Test-Path (Join-Path $sdkLib 'um\x64\kernel32.lib'))) { throw "Selected Windows SDK x64 libraries are unavailable: $sdkLib" }
+          Write-Host "Windows SDK -> $sdkVersion"
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
@@ -290,41 +379,81 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
 
+      - name: Export GitHub Actions cache environment
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            if (!process.env.ACTIONS_CACHE_URL || !process.env.ACTIONS_RUNTIME_TOKEN) {
+              core.setFailed('ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN are required for vcpkg x-gha caching');
+              return;
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
+
       - name: Verify vcpkg and install dependencies
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           if (-not (Test-Path $env:VCPKG_ROOT)) { throw "VCPKG_ROOT does not exist: $env:VCPKG_ROOT" }
           $probe = Join-Path $env:VCPKG_ROOT 'blacksmith-write-test.tmp'
           'ok' | Set-Content $probe
           Remove-Item $probe
+          if (-not $env:ACTIONS_CACHE_URL -or -not $env:ACTIONS_RUNTIME_TOKEN) { throw 'GitHub Actions cache environment is missing' }
           & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root="$env:VCPKG_ROOT\installed"
           if ($LASTEXITCODE -ne 0) { throw 'vcpkg install failed' }
 
       - name: Build Windows desktop
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $python = Get-Command python -ErrorAction Stop
           $env:CARGO_INCREMENTAL = '0'
-          python3 .\build.py --portable --flutter --hwcodec --vram --skip-portable-pack
+          & python .\build.py --portable --flutter --hwcodec --vram --skip-portable-pack
           if ($LASTEXITCODE -ne 0) { throw 'build.py failed' }
 
-      - name: Verify Windows artifacts
+      - name: Package and verify Windows artifacts
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $bundle = Join-Path $PWD 'flutter\build\windows\x64\runner\Release'
+          $customEngineManifest = Get-Content custom-engine.sha256 -Raw
+          $customEngineHash = ($customEngineManifest -split '\s+')[0].ToLowerInvariant()
+          $engineInBundle = Join-Path $bundle 'flutter_windows.dll'
           foreach ($file in @('rustdesk.exe', 'flutter_windows.dll')) {
             $path = Join-Path $bundle $file
             if (-not (Test-Path $path)) { throw "$file missing from Windows bundle" }
-            $item = Get-Item $path
-            if ($item.Length -le 0) { throw "$file is empty" }
-            Write-Host "$($item.FullName): $($item.Length) bytes"
+            if ((Get-Item $path).Length -le 0) { throw "$file is empty" }
           }
-          $dlls = @(Get-ChildItem $bundle -Filter '*.dll')
-          if ($dlls.Count -eq 0) { throw 'Windows bundle contains no plugin DLLs' }
-          Get-ChildItem $bundle | Format-Table Name,Length
+          $bundleEngineHash = (Get-FileHash $engineInBundle -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($bundleEngineHash -ne $customEngineHash) { throw 'Final bundle does not contain the verified custom Flutter engine' }
+          $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          if ($dumpbin) {
+            $headerOutput = & $dumpbin.Source /headers (Join-Path $bundle 'rustdesk.exe')
+            if ($LASTEXITCODE -ne 0) { throw 'dumpbin header inspection failed' }
+            if (-not ($headerOutput | Select-String 'machine \(x64\)' -Quiet)) { throw 'rustdesk.exe is not an x64 PE' }
+            & $dumpbin.Source /dependents (Join-Path $bundle 'rustdesk.exe')
+            if ($LASTEXITCODE -ne 0) { throw 'dumpbin dependency check failed' }
+          } else { Write-Host 'dumpbin.exe unavailable; skipping optional PE dependency probe' }
+          $manifest = Join-Path $bundle 'MANIFEST.sha256'
+          Get-ChildItem -Path $bundle -File -Recurse | Where-Object { $_.FullName -ne $manifest } | Sort-Object FullName | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.FullName.Substring($bundle.Length + 1))"
+          } | Set-Content $manifest
+          $zip = Join-Path $PWD 'rustdesk-1.4.9-windows-x86_64-bundle.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $zip -CompressionLevel Optimal
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$zipHash  $(Split-Path $zip -Leaf)" | Set-Content SHA256SUMS
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $zipHash) { throw 'Windows package checksum verification failed' }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: blacksmith-windows-x86_64
           if-no-files-found: error
-          path: flutter/build/windows/x64/runner/Release/**
+          path: |
+            rustdesk-1.4.9-windows-x86_64-bundle.zip
+            SHA256SUMS
