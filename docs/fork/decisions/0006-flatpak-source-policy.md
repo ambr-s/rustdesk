@@ -9,6 +9,10 @@ Create a dedicated source-built manifest for app ID `ch.flourish.RustDeskControl
 
 The manifest/build definition must invoke the matched Rust and Flutter controller profiles, install only the controller bundle and metadata, and omit host helpers, service binaries, systemd units, installer scripts, PAM, xdotool, local input-injection dependencies, and capture helpers. Baseline permissions are Wayland, network, PulseAudio, and narrowly justified DRI decode/render access. No X11, home/host filesystem, ScreenCast/RemoteDesktop permissions, Flatpak-management D-Bus access, unrestricted system bus, uinput/evdev, or local capture. User-selected imports/exports, screenshots, recordings, and file transfer use document/file-picker portals; any session-bus permission is limited to demonstrated portal-mediated needs.
 
+The initial portal allowlist is exact: interface `org.freedesktop.portal.FileChooser` on session-bus name `org.freedesktop.portal.Desktop` at object path `/org/freedesktop/portal/desktop` for open/save selection, plus document access granted by that user-mediated result. The application does not directly grant itself `org.freedesktop.portal.Documents`; it consumes only the document URI/path returned by FileChooser. The manifest adds no unrestricted session-bus socket and no explicit broad `--talk-name`; any later explicit bus name requires a separate reviewed permission record. The application must not call `org.freedesktop.portal.ScreenCast`, `org.freedesktop.portal.RemoteDesktop`, or `org.freedesktop.portal.Screenshot`. Controller screenshots and recordings are generated from already received remote frames and use FileChooser save destinations, never local-desktop portal capture.
+
+The primary GPU-enabled profile may grant Flatpak `--device=dri` solely for decode/render after runtime evidence demonstrates that need; compile-time dependency checks must still exclude DRM/KMS capture. A separately tested software-decode profile omits DRI when feasible. DRI presence is not itself a failure, but opening KMS/card capture paths or local capture APIs is.
+
 Use a checked-in evidence directory with one machine-readable record per source/build/permission/runtime result:
 
 ```text
@@ -53,8 +57,11 @@ The schema must require: evidence `id`, `kind`, `status` (`pass`, `fail`, `block
 - `flatpak-builder --force-clean` builds from pinned sources without local `.deb` inputs.
 - Repeated builds have matching version metadata and recorded checksums where reproducibility is applicable.
 - Manifest inspection confirms app ID and no forbidden permissions/modules.
+- A machine-readable exact permission comparison fails on any finish argument or D-Bus name outside the approved allowlist, and the built file list fails if a service binary, host helper, systemd/PAM file, capture helper, or local PTY implementation is present.
 - Sandbox runtime checks confirm Wayland window, networking, PulseAudio playback, portal file access, and absence of host service, local capture, input injection, X11, and unrestricted bus activity.
+- D-Bus/portal tracing confirms FileChooser/document access only and zero ScreenCast, RemoteDesktop, or Screenshot portal sessions; DRI evidence records opened device nodes and demonstrates decode/render without DRM master/KMS or capture.
 - Evidence records validate against `schemas/evidence.schema.json` and link to actual logs/artifacts.
+- Each evidence record binds the application commit, manifest/source revisions, artifact SHA-256, runner/runtime environment, command or test procedure, and reviewer; schema validation fails on a missing binding.
 
 ## Rollback
 

@@ -11,6 +11,8 @@ Prefer adding a `decode` feature to `libs/scrap` and making capture backends opt
 
 Remote audio playback remains in the outgoing client path. Local microphone/voice-call capture must be gated out of the controller profile. Do not remove playback or remote-display screenshot/recording functionality, which operates on the remote stream.
 
+`src/audio_service.rs` and its native input-device dependency closure are host/local-capture capability. The `start_voice_call()` path in `src/client/io_loop.rs` currently subscribes to `audio_service::NAME`, configures a local input device, and forwards captured audio. The controller profile must not compile that recorder/subscription path or expose voice-call input controls. Incoming remote audio-frame decode and playback stay in a neutral outgoing-client playback path and must not depend on `audio_service` capture startup.
+
 ## Evidence from the current tree
 
 - `Cargo.toml:55` unconditionally requests `scrap` with `features = ["wayland"]`.
@@ -32,15 +34,16 @@ The source inventory does not prove which individual codec symbols can be extrac
 
 1. Produce a feature/dependency map for `scrap`, `src/client`, and media crates.
 2. Add the smallest decode-only feature/module boundary with capture features opt-in.
-3. Gate microphone capture separately from playback in the client path.
+3. Gate `audio_service`, `start_voice_call()`, voice-call input configuration, and their native recorder dependencies separately from remote audio-frame decode/playback.
 4. Gate host capture/input modules through `host-services`.
-5. Build the controller with `--no-default-features --features controller-only,flutter` and inspect `cargo tree`.
+5. Build the controller with `--no-default-features --features controller-only,flutter,use_dasp` and inspect `cargo tree`.
 6. Remove or narrow any remaining capture dependency edges, then update packaging.
 
 ## Validation
 
 - `cargo tree --locked` for the controller contains no PipeWire/GStreamer/DRM/X11 capture or local input-injection closure unless a dependency is demonstrably decode-only.
 - Compile-time/source checks reject host capture modules and the local microphone path.
+- A controller compile test rejects references to `audio_service::NAME`, `set_voice_call_input_device`, and recorder startup, while focused playback tests still decode and play received remote audio frames.
 - Controller runtime exercises remote video decode/render, remote audio playback, remote-display screenshot/recording, and file transfer.
 - Host profile still compiles and retains local host capabilities.
 - Artifact inspection is defense-in-depth; Cargo feature/module graphs remain authoritative.
@@ -51,4 +54,4 @@ Keep the prior `scrap` feature selection and host profile available while the de
 
 ## Required spike before irreversible decisions
 
-Build a minimal controller target and produce `cargo tree -e features` plus a symbol/import inventory for remote video decode, playback, and microphone capture. The spike must identify whether decode lives in `scrap`, `src/client`, or another crate before naming a final public feature API.
+Build a minimal controller target and produce `cargo tree -e features` plus a symbol/import inventory for remote video decode, playback, `src/audio_service.rs`, and `start_voice_call()`. The spike must identify whether decode lives in `scrap`, `src/client`, or another crate, and enumerate the native recorder dependencies that disappear, before naming a final public feature API.

@@ -14,8 +14,9 @@ Add two product-level features with stable, explicit names:
 Keep `flutter` as the existing bridge feature and keep existing capability features (`drm`, `drm-wake`, `hwcodec`, `vram`, and codec/audio choices) intact. Do **not** rename `flutter` or silently change the upstream `default` feature in Phase 0. The first implementation should define the product profiles explicitly in build commands:
 
 ```text
-cargo build --locked --release --no-default-features --features controller-only,flutter
-cargo build --locked --release --features host-services,flutter
+cargo build --locked --release --lib --no-default-features --features controller-only,flutter,use_dasp
+cargo build --locked --release --lib --features host-services,flutter
+cargo build --locked --release --bin service --features host-services
 ```
 
 `controller-only` must not imply `host-services`; `host-services` must not be required by shared outgoing client/session code. If an upstream-compatible default profile is needed, retain the current `default = ["use_dasp"]` until a later release decision explicitly changes it.
@@ -27,6 +28,16 @@ The module graph follows the feature boundary, not runtime flags:
 - Keep `src/client/**`, rendezvous/session/UI composition, decode/render, playback, clipboard, and file transfer available to `controller-only`.
 - Exclude `src/service.rs` and its binary target from controller builds and packages.
 - Move or duplicate only the minimum reusable media traits needed by the client; do not make controller builds depend on the host service registry.
+
+Cargo enforces that boundary rather than relying on packaging discipline:
+
+- add `required-features = ["host-services"]` to the `service` binary target;
+- make dependencies used only by host modules optional and include them through `host-services`;
+- make `portable-pty` host-only because it implements the remote peer's local PTY service, while retaining the protocol/UI client for controlling a remote terminal;
+- audit every `enigo` use before gating it: host-side injection implementations belong to `host-services`, while any controller requirement for read-only local key-state observation must move behind a non-injecting interface rather than retaining injection APIs;
+- split `scrap` decode from capture as ADR-0003 specifies;
+- classify platform service, privileged startup, and host-service IPC separately from benign single-instance/controller IPC; and
+- package an explicit controller target allowlist, never `cargo build --all-targets` output.
 
 The exact dependency list is a follow-up implementation result. Cargo metadata/tree is authoritative; symbol/string scans are supplementary.
 
@@ -53,16 +64,19 @@ These observations describe the checked-in source at the Phase 0 base; they are 
 1. Add feature declarations without changing `default`.
 2. Use `cargo metadata` and `cargo tree` to inventory every host-only edge.
 3. Gate `src/lib.rs`, `src/core_main.rs`, platform service startup, and the service binary target.
-4. Extract any shared outgoing types from `src/server/service.rs` into a neutral module only when compilation proves it necessary.
-5. Gate host-only dependencies and test both explicit profiles with `--locked`.
-6. Make packaging invoke the controller profile explicitly; only then consider a default-profile change in a separate reviewed decision.
+4. Inventory each non-mobile dependency and each Cargo target, then mark host-only dependencies optional and bind them to `host-services`.
+5. Extract any shared outgoing types from `src/server/service.rs` into a neutral module only when compilation proves it necessary.
+6. Gate host-only dependencies and test both explicit profiles with `--locked`.
+7. Make packaging invoke the controller library target explicitly and reject every undeclared executable; only then consider a default-profile change in a separate reviewed decision.
 
 ## Validation
 
-- `cargo metadata --no-deps --format-version 1` shows the intended features and targets.
-- `cargo tree --locked --no-default-features --features controller-only,flutter` contains no host-only closure after the split.
+- `cargo metadata --no-deps --format-version 1` shows the intended features, `required-features` on `service`, and the complete target list.
+- `cargo tree --locked --no-default-features --features controller-only,flutter,use_dasp -e features` contains no host-only closure after the split, and equivalent target-platform runs cover every supported controller target.
+- `cargo check --locked --all-targets` exercises the host profile, while explicit controller `--lib` checks ensure no incidental service or helper target is selected.
 - Controller compilation and host compilation both succeed where toolchains are available.
 - Source/AST checks confirm host modules and `src/service.rs` are not in the controller target.
+- The packaged controller artifact allowlist contains the controller executable/libraries only and fails if the `service` binary, local PTY implementation, host helper, systemd unit, or privileged installer is present.
 - Runtime validation confirms no host listener/service startup; this cannot be inferred from compilation alone.
 
 ## Rollback
@@ -71,4 +85,4 @@ Remove the new feature gates and return build invocations to the existing `defau
 
 ## Required spike before irreversible decisions
 
-A compile-graph spike must first prove that outgoing audio playback, remote-terminal controller functions, and shared session types do not pull `src/server/**` or local capture. If they do, record the smallest extraction boundary before changing feature defaults.
+A compile-graph spike must first produce the complete Cargo target/dependency inventory and prove that outgoing audio playback, remote-terminal controller functions, and shared session types do not pull `src/server/**`, `portable-pty`, injection implementations, or local capture. If they do, record the smallest extraction boundary before changing feature defaults.
