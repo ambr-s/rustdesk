@@ -254,7 +254,10 @@ pub struct ClipboardNonFile {
     pub special_name: String,
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataKeyboard {
@@ -271,7 +274,10 @@ pub enum DataKeyboardResponse {
     GetKeyState(bool),
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataMouse {
@@ -370,11 +376,11 @@ pub enum Data {
     PrivacyModeState((i32, PrivacyModeState, String)),
     TestRendezvousServer,
     Deployed,
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     Keyboard(DataKeyboard),
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     KeyboardResponse(DataKeyboardResponse),
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     Mouse(DataMouse),
     Control(DataControl),
     Theme(String),

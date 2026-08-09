@@ -29,6 +29,36 @@ class ControllerBuildProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "controller-only,flutter,use_dasp")
 
+    def test_controller_dependency_closure_excludes_host_only_crates(self) -> None:
+        forbidden = {
+            "async-process",
+            "enigo",
+            "evdev",
+            "libxdo-sys",
+            "pam",
+            "pam-sys",
+            "portable-pty",
+            "rust-pulsectl",
+        }
+        result = subprocess.run(
+            [
+                "cargo", "tree", "--locked", "--no-default-features",
+                "--features", "controller-only,flutter,use_dasp,linux-pkg-config",
+                "--prefix", "none", "--format", "{p}", "-e", "normal", "-p", "rustdesk",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        packages = {line.split(" ", 1)[0] for line in result.stdout.splitlines() if line}
+        self.assertEqual(
+            sorted(packages & forbidden), [],
+            "controller dependency closure contains host-only crates:\n" + result.stdout,
+        )
+
     def test_cargo_metadata_describes_the_profile_features(self) -> None:
         import json
 

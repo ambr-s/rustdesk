@@ -5,8 +5,13 @@ use crate::platform::windows::{get_char_from_vk, get_unicode_from_vk};
 #[cfg(not(feature = "flutter"))]
 use crate::ui::CUR_SESSION;
 use crate::ui_session_interface::{InvokeUiSession, Session};
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
+use crate::client::get_key_state;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::{client::get_key_state, common::GrabState};
+use crate::common::GrabState;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::log;
 use hbb_common::message_proto::*;
@@ -888,7 +893,10 @@ fn parse_add_lock_modes_modifiers(
     // }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 fn add_lock_modes_modifiers(key_event: &mut KeyEvent, is_numpad_key: bool, is_letter_key: bool) {
     if is_letter_key && get_key_state(enigo::Key::CapsLock) {
         key_event.modifiers.push(ControlKey::CapsLock.into());
@@ -898,7 +906,10 @@ fn add_lock_modes_modifiers(key_event: &mut KeyEvent, is_numpad_key: bool, is_le
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 pub fn convert_numpad_keys(key: Key) -> Key {
     if get_key_state(enigo::Key::NumLock) {
         return key;
@@ -964,11 +975,21 @@ pub fn event_to_key_events(
         KeyboardMode::Map => map_keyboard_mode(peer.as_str(), event, key_event),
         KeyboardMode::Translate => translate_keyboard_mode(peer.as_str(), event, key_event),
         _ => {
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            #[cfg(all(
+                not(any(target_os = "android", target_os = "ios")),
+                feature = "host-services"
+            ))]
             {
                 legacy_keyboard_mode(event, key_event)
             }
             #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                Vec::new()
+            }
+            #[cfg(all(
+                not(any(target_os = "android", target_os = "ios")),
+                not(feature = "host-services")
+            ))]
             {
                 Vec::new()
             }
@@ -982,7 +1003,10 @@ pub fn event_to_key_events(
             if let Some(lock_modes) = _lock_modes {
                 parse_add_lock_modes_modifiers(key_event, lock_modes, is_numpad_key, is_letter_key);
             } else {
-                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                #[cfg(all(
+                    not(any(target_os = "android", target_os = "ios")),
+                    feature = "host-services"
+                ))]
                 add_lock_modes_modifiers(key_event, is_numpad_key, is_letter_key);
             }
         }
@@ -1014,7 +1038,10 @@ pub fn get_peer_platform() -> String {
     "Windows".to_string()
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 pub fn legacy_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Vec<KeyEvent> {
     let mut events = Vec::new();
     // legacy mode(0): Generate characters locally, look for keycode on other side.

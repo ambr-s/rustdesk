@@ -14,6 +14,7 @@ use hbb_common::{
     regex::{Captures, Regex},
     users::{get_user_by_name, os::unix::UserExt},
 };
+#[cfg(feature = "host-services")]
 use libxdo_sys::{self, xdo_t, Window};
 use std::{
     cell::RefCell,
@@ -25,6 +26,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+#[cfg(feature = "host-services")]
 use terminfo::{capability as cap, Database};
 use wallpaper;
 
@@ -48,16 +50,6 @@ const TERM_XTERM: &str = "xterm";
 lazy_static::lazy_static! {
     pub static ref IS_X11: bool = hbb_common::platform::linux::is_x11_or_headless();
     // Cache for TERM value - once TERM_XTERM_256COLOR is found, reuse it directly
-    static ref CACHED_TERM: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-    static ref DATABASE_XTERM_256COLOR: Option<Database> = {
-        match Database::from_name(TERM_XTERM_256COLOR) {
-            Ok(database) => Some(database),
-            Err(err) => {
-                log::error!("Failed to initialize {} database: {}", TERM_XTERM_256COLOR, err);
-                None
-            }
-        }
-    };
     static ref ACTIVE_USER_LOOKUP_CACHE: std::sync::Mutex<Option<ActiveUserLookupCache>> =
         std::sync::Mutex::new(None);
     // https://github.com/rustdesk/rustdesk/issues/13705
@@ -92,6 +84,24 @@ lazy_static::lazy_static! {
     };
 }
 
+#[cfg(feature = "host-services")]
+lazy_static::lazy_static! {
+    static ref CACHED_TERM: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+}
+
+#[cfg(feature = "host-services")]
+lazy_static::lazy_static! {
+    static ref DATABASE_XTERM_256COLOR: Option<Database> = {
+        match Database::from_name(TERM_XTERM_256COLOR) {
+            Ok(database) => Some(database),
+            Err(err) => {
+                log::error!("Failed to initialize {} database: {}", TERM_XTERM_256COLOR, err);
+                None
+            }
+        }
+    };
+}
+
 #[inline]
 fn update_active_user_lookup_cache(desktop: &Desktop) {
     if let Ok(mut cache) = ACTIVE_USER_LOOKUP_CACHE.lock() {
@@ -113,6 +123,7 @@ fn get_active_user_id_name_from_cache() -> Option<(String, String)> {
     Some((entry.uid.clone(), entry.username.clone()))
 }
 
+#[cfg(feature = "host-services")]
 thread_local! {
     // XDO context - created via libxdo-sys (which uses dynamic loading stub).
     // If libxdo is not available, xdo will be null and xdo-based functions become no-ops.
@@ -130,6 +141,7 @@ thread_local! {
 
 // X11 error event structure for the custom error handler.
 // See: https://www.x.org/releases/current/doc/libX11/libX11/libX11.html#Using-the-Default-Error-Handlers
+#[cfg(feature = "host-services")]
 #[repr(C)]
 struct XErrorEvent {
     type_: c_int,
@@ -141,19 +153,26 @@ struct XErrorEvent {
     minor_code: u8,
 }
 
+#[cfg(feature = "host-services")]
 type XErrorHandler = unsafe extern "C" fn(*mut c_void, *mut XErrorEvent) -> c_int;
 
+#[cfg(feature = "host-services")]
 const X11_BAD_WINDOW: u8 = 3;
+#[cfg(feature = "host-services")]
 const XDO_SUCCESS: c_int = 0;
+#[cfg(feature = "host-services")]
 const XDO_ERROR: c_int = 1;
 
 /// Atomic flag set by the custom X error handler when a BadWindow error occurs.
+#[cfg(feature = "host-services")]
 static X_BAD_WINDOW_DETECTED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "host-services")]
 static X_UNEXPECTED_ERROR_DETECTED: AtomicBool = AtomicBool::new(false);
 
 /// Custom X error handler that catches BadWindow errors (error_code == 3) instead of
 /// letting the default handler terminate the process.
 /// See issue: https://github.com/rustdesk/rustdesk/issues/9003
+#[cfg(feature = "host-services")]
 unsafe extern "C" fn handle_x_error(_display: *mut c_void, event: *mut XErrorEvent) -> c_int {
     if !event.is_null() && (*event).error_code == X11_BAD_WINDOW {
         X_BAD_WINDOW_DETECTED.store(true, Ordering::SeqCst);
@@ -172,6 +191,7 @@ unsafe extern "C" fn handle_x_error(_display: *mut c_void, event: *mut XErrorEve
     0
 }
 
+#[cfg(feature = "host-services")]
 #[link(name = "X11")]
 extern "C" {
     fn XOpenDisplay(display_name: *const c_char) -> *mut c_void;
@@ -179,6 +199,7 @@ extern "C" {
     fn XSetErrorHandler(handler: Option<XErrorHandler>) -> Option<XErrorHandler>;
 }
 
+#[cfg(feature = "host-services")]
 #[link(name = "Xfixes")]
 extern "C" {
     // fn XFixesQueryExtension(dpy: *mut c_void, event: *mut c_int, error: *mut c_int) -> c_int;
@@ -215,6 +236,7 @@ fn sleep_millis(millis: u64) {
     std::thread::sleep(Duration::from_millis(millis));
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_cursor_pos() -> Option<(i32, i32)> {
     let mut res = None;
     XDO.with(|xdo| {
@@ -238,6 +260,7 @@ pub fn get_cursor_pos() -> Option<(i32, i32)> {
     res
 }
 
+#[cfg(feature = "host-services")]
 pub fn set_cursor_pos(x: i32, y: i32) -> bool {
     let mut res = false;
     XDO.with(|xdo| {
@@ -290,6 +313,18 @@ pub fn clip_cursor(_rect: Option<(i32, i32, i32, i32)>) -> bool {
 
 pub fn reset_input_cache() {}
 
+#[cfg(not(feature = "host-services"))]
+pub fn get_cursor_pos() -> Option<(i32, i32)> { None }
+#[cfg(not(feature = "host-services"))]
+pub fn set_cursor_pos(_x: i32, _y: i32) -> bool { false }
+#[cfg(not(feature = "host-services"))]
+pub fn get_focused_display(_displays: Vec<DisplayInfo>) -> Option<usize> { None }
+#[cfg(not(feature = "host-services"))]
+pub fn get_cursor() -> ResultType<Option<u64>> { Ok(None) }
+#[cfg(not(feature = "host-services"))]
+pub fn get_cursor_data(_hcursor: u64) -> ResultType<CursorData> { Ok(Default::default()) }
+
+#[cfg(feature = "host-services")]
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     let mut res = None;
     XDO.with(|xdo| {
@@ -362,6 +397,7 @@ pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     res
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_cursor() -> ResultType<Option<u64>> {
     // DRM/KMS capture: the hardware cursor arrives over the `_drm` stream, not from XFixes.
     //
@@ -404,6 +440,7 @@ pub fn get_cursor() -> ResultType<Option<u64>> {
     Ok(res)
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     // DRM/KMS capture: return the latest hardware-cursor snapshot from the `_drm` stream. Its id may
     // have advanced past `hcursor` between get_cursor() and here, so return the latest rather than
@@ -508,6 +545,7 @@ fn start_uinput_service() {
 ///
 /// Terminals like `linux` and `vt100` are excluded because they lack support for
 /// modern features required by many applications.
+#[cfg(feature = "host-services")]
 fn suggest_best_term() -> String {
     if is_running_in_tmux() || is_running_in_screen() {
         return TERM_SCREEN_256COLOR.to_string();
@@ -518,18 +556,22 @@ fn suggest_best_term() -> String {
     TERM_XTERM.to_string()
 }
 
+#[cfg(feature = "host-services")]
 fn is_running_in_tmux() -> bool {
     std::env::var("TMUX").is_ok()
 }
 
+#[cfg(feature = "host-services")]
 fn is_running_in_screen() -> bool {
     std::env::var("STY").is_ok()
 }
 
+#[cfg(feature = "host-services")]
 fn supports_256_colors(db: &Database) -> bool {
     db.get::<cap::MaxColors>().map_or(false, |n| n.0 >= 256)
 }
 
+#[cfg(feature = "host-services")]
 fn term_supports_256_colors(term: &str) -> bool {
     match term {
         TERM_XTERM_256COLOR => DATABASE_XTERM_256COLOR
@@ -539,6 +581,7 @@ fn term_supports_256_colors(term: &str) -> bool {
     }
 }
 
+#[cfg(feature = "host-services")]
 fn get_cur_term(uid: &str) -> Option<String> {
     // Check cache first - if TERM_XTERM_256COLOR was found before, reuse it
     if let Ok(cache) = CACHED_TERM.lock() {
@@ -587,6 +630,7 @@ fn get_cur_term(uid: &str) -> Option<String> {
 
 /// Get all TERM values from shell processes (bash, zsh, fish, sh).
 /// Returns a Vec of unique, valid TERM values.
+#[cfg(feature = "host-services")]
 fn get_all_term_values(uid: &str) -> Vec<String> {
     let Ok(uid_num) = uid.parse::<u32>() else {
         return Vec::new();
@@ -680,6 +724,7 @@ fn get_all_term_values(uid: &str) -> Vec<String> {
 }
 
 #[inline]
+#[cfg(feature = "host-services")]
 fn try_start_server_(desktop: Option<&Desktop>) -> ResultType<Option<Child>> {
     match desktop {
         Some(desktop) => {
@@ -723,6 +768,7 @@ fn try_start_server_(desktop: Option<&Desktop>) -> ResultType<Option<Child>> {
     }
 }
 
+#[cfg(feature = "host-services")]
 #[inline]
 fn start_server(desktop: Option<&Desktop>, server: &mut Option<Child>) {
     match try_start_server_(desktop) {
@@ -1304,6 +1350,7 @@ where
     }
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_pa_monitor() -> String {
     get_pa_sources()
         .drain(..)
@@ -1313,6 +1360,7 @@ pub fn get_pa_monitor() -> String {
         .unwrap_or("".to_owned())
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_pa_source_name(desc: &str) -> String {
     get_pa_sources()
         .drain(..)
@@ -1322,6 +1370,7 @@ pub fn get_pa_source_name(desc: &str) -> String {
         .unwrap_or("".to_owned())
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_pa_sources() -> Vec<(String, String)> {
     use pulsectl::controllers::*;
     let mut out = Vec::new();
@@ -1343,6 +1392,7 @@ pub fn get_pa_sources() -> Vec<(String, String)> {
     out
 }
 
+#[cfg(feature = "host-services")]
 pub fn get_default_pa_source() -> Option<(String, String)> {
     use pulsectl::controllers::*;
     match SourceController::create() {
@@ -1358,6 +1408,26 @@ pub fn get_default_pa_source() -> Option<(String, String)> {
             log::error!("Failed to get_pa_source: {:?}", err);
         }
     }
+    None
+}
+
+#[cfg(not(feature = "host-services"))]
+pub fn get_pa_monitor() -> String {
+    String::new()
+}
+
+#[cfg(not(feature = "host-services"))]
+pub fn get_pa_source_name(_desc: &str) -> String {
+    String::new()
+}
+
+#[cfg(not(feature = "host-services"))]
+pub fn get_pa_sources() -> Vec<(String, String)> {
+    Vec::new()
+}
+
+#[cfg(not(feature = "host-services"))]
+pub fn get_default_pa_source() -> Option<(String, String)> {
     None
 }
 

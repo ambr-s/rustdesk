@@ -23,7 +23,21 @@ required-features = ["host-services"]
 
 [features]
 controller-only = []
-host-services = []
+host-services = [
+    "dep:async-process",
+    "dep:enigo",
+    "dep:evdev",
+    "dep:libxdo-sys",
+    "dep:pam",
+    "dep:portable-pty",
+    "dep:rust-pulsectl",
+    "dep:gtk",
+    "dep:tao",
+    "dep:tray-icon",
+    "dep:terminfo",
+    "dep:termios",
+    "dep:winit",
+]
 inline = []
 use_samplerate = ["samplerate"]
 use_rubato = ["rubato"]
@@ -100,13 +114,13 @@ ringbuf = "0.3"
 mac_address = "1.1"
 sciter-rs = { git = "https://github.com/rustdesk-org/rust-sciter", branch = "dyn" }
 sys-locale = "0.3"
-enigo = { path = "libs/enigo", features = [ "with_serde" ] }
+enigo = { path = "libs/enigo", features = [ "with_serde" ], optional = true }
 clipboard = { path = "libs/clipboard" }
 ctrlc = "3.2"
 # arboard = { version = "3.4", features = ["wayland-data-control"] }
 arboard = { git = "https://github.com/rustdesk-org/arboard", features = ["wayland-data-control"] }
 clipboard-master = { git = "https://github.com/rustdesk-org/clipboard-master" }
-portable-pty = { git = "https://github.com/rustdesk-org/wezterm", branch = "rustdesk/pty_based_0.8.1", package = "portable-pty" }
+portable-pty = { git = "https://github.com/rustdesk-org/wezterm", branch = "rustdesk/pty_based_0.8.1", package = "portable-pty", optional = true }
 
 system_shutdown = "4.0"
 qrcode-generator = "4.1"
@@ -170,8 +184,8 @@ piet-coregraphics = "0.6"
 foreign-types = "0.3"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
-tray-icon = { git = "https://github.com/tauri-apps/tray-icon", version = "0.21.3" }
-tao = { git = "https://github.com/rustdesk-org/tao", branch = "dev" }
+tray-icon = { git = "https://github.com/tauri-apps/tray-icon", version = "0.21.3", optional = true }
+tao = { git = "https://github.com/rustdesk-org/tao", branch = "dev", optional = true }
 image = "0.24"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
@@ -186,24 +200,24 @@ bytemuck = "1.23"
 ttf-parser = "0.25"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libxdo-sys = "0.11"
+libxdo-sys = { version = "0.11", optional = true }
 psimple = { package = "libpulse-simple-binding", version = "2.27" }
 pulse = { package = "libpulse-binding", version = "2.27" }
-rust-pulsectl = { git = "https://github.com/rustdesk-org/pulsectl" }
-async-process = "1.7"
-evdev = { git="https://github.com/rustdesk-org/evdev" }
+rust-pulsectl = { git = "https://github.com/rustdesk-org/pulsectl", optional = true }
+async-process = { version = "1.7", optional = true }
+evdev = { git="https://github.com/rustdesk-org/evdev", optional = true }
 dbus = "0.9"
 dbus-crossroads = "0.5"
-pam = { git="https://github.com/rustdesk-org/pam" }
+pam = { git="https://github.com/rustdesk-org/pam", optional = true }
 x11-clipboard = {git="https://github.com/clslaid/x11-clipboard", branch = "feat/store-batch", optional = true}
 x11rb =  {version = "0.12", features = ["all-extensions"], optional = true}
 percent-encoding = {version = "2.3", optional = true}
 once_cell = {version = "1.18", optional = true}
 nix = { version = "0.29", features = ["term", "process"]}
-gtk = "0.18"
-termios = "0.3"
-terminfo = "0.8"
-winit = "0.30"
+gtk = { version = "0.18", optional = true }
+termios = { version = "0.3", optional = true }
+terminfo = { version = "0.8", optional = true }
+winit = { version = "0.30", optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }

@@ -395,13 +395,16 @@ pub fn get_sound_inputs() -> Vec<String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let inputs: Vec<String> = crate::platform::linux::get_pa_sources()
-            .drain(..)
-            .map(|x| x.1)
-            .collect();
+        #[cfg(feature = "host-services")]
+        {
+            let inputs: Vec<String> = crate::platform::linux::get_pa_sources()
+                .drain(..)
+                .map(|x| x.1)
+                .collect();
 
-        for name in inputs {
-            a.push(name);
+            for name in inputs {
+                a.push(name);
+            }
         }
     }
     a
