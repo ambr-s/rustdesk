@@ -730,7 +730,7 @@ pub fn core_main() -> Option<Vec<String>> {
         } else if args[0] == "--terminal-helper" {
             // Terminal helper process - runs as user to create ConPTY
             // This is needed because ConPTY has compatibility issues with CreateProcessAsUserW
-            #[cfg(target_os = "windows")]
+            #[cfg(all(target_os = "windows", feature = "host-services"))]
             {
                 let helper_args: Vec<String> = args[1..].to_vec();
                 if let Err(e) = crate::server::terminal_helper::run_terminal_helper(&helper_args) {

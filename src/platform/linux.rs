@@ -1,4 +1,6 @@
-use super::{gtk_sudo, CursorData, ResultType};
+use super::{CursorData, ResultType};
+#[cfg(feature = "host-services")]
+use super::gtk_sudo;
 use desktop::Desktop;
 pub use hbb_common::platform::linux::*;
 use hbb_common::{
@@ -369,7 +371,7 @@ pub fn get_cursor() -> ResultType<Option<u64>> {
     // every cursor poll. A latch that guessed wrong costs a cursor served by the wrong source until
     // the process restarts, not a capture that cannot start -- and by the time a cursor is being
     // polled there is a live session, which is the case the latch reads correctly.
-    #[cfg(feature = "drm")]
+    #[cfg(all(feature = "drm", feature = "host-services"))]
     if !is_x11() {
         if let Some(id) = crate::server::drm_capturer::drm_cursor_id() {
             // In a mixed DRM + PipeWire session the DRM streams only cover the DRM-backed displays;
@@ -409,7 +411,7 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     //
     // Memoised `is_x11()` on purpose, for the reason spelled out in `get_cursor()`; the two must
     // agree anyway, since a caller that took the DRM branch there has to take it here.
-    #[cfg(feature = "drm")]
+    #[cfg(all(feature = "drm", feature = "host-services"))]
     if !is_x11() {
         if let Some(c) = crate::server::drm_capturer::drm_cursor() {
             // See get_cursor(): a hidden DRM sentinel is authoritative only in a pure-DRM session. In
@@ -481,6 +483,7 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     }
 }
 
+#[cfg(feature = "host-services")]
 fn start_uinput_service() {
     use crate::server::uinput::service;
     std::thread::spawn(|| {
@@ -1564,6 +1567,7 @@ pub fn exec_privileged(args: &[&str]) -> ResultType<Child> {
 }
 */
 
+#[cfg(feature = "host-services")]
 pub fn check_super_user_permission() -> ResultType<bool> {
     gtk_sudo::run(vec!["echo"])?;
     Ok(true)
@@ -2318,6 +2322,7 @@ fn has_cmd(cmd: &str) -> bool {
         .unwrap_or_default()
 }
 
+#[cfg(feature = "host-services")]
 pub fn run_cmds_privileged(cmds: &str) -> bool {
     crate::platform::gtk_sudo::run(vec![cmds]).is_ok()
 }

@@ -1605,7 +1605,7 @@ pub mod connection_manager {
     fn start_listen_ipc(new_thread: bool) {
         use crate::ui_cm_interface::{start_ipc, ConnectionManager};
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", feature = "host-services"))]
         std::thread::spawn(crate::ipc::start_pa);
 
         let cm = ConnectionManager {

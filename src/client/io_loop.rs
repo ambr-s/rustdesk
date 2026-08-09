@@ -1,7 +1,9 @@
+#[cfg(not(any(target_os = "ios")))]
+use crate::clipboard::CLIPBOARD_INTERVAL;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::clipboard::{update_clipboard, ClipboardSide};
-#[cfg(not(any(target_os = "ios")))]
-use crate::{audio_service, clipboard::CLIPBOARD_INTERVAL, ConnInner, CLIENT_SERVER};
+#[cfg(all(not(any(target_os = "ios")), feature = "host-services"))]
+use crate::{audio_service, ConnInner, CLIENT_SERVER};
 use crate::{
     client::{
         self, new_voice_call_request, Client, Data, Interface, MediaData, MediaSender,
@@ -478,8 +480,7 @@ impl<T: InvokeUiSession> Remote<T> {
         {
             return None;
         }
-        // iOS does not have this server.
-        #[cfg(not(any(target_os = "ios")))]
+        #[cfg(feature = "host-services")]
         {
             // NOTE:
             // The client server and --server both use the same sound input device.
@@ -544,7 +545,7 @@ impl<T: InvokeUiSession> Remote<T> {
             });
             return Some(tx);
         }
-        #[cfg(target_os = "ios")]
+        #[cfg(not(feature = "host-services"))]
         {
             None
         }

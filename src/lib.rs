@@ -4,6 +4,11 @@ compile_error!(
 );
 
 mod keyboard;
+mod connection_meta;
+pub use connection_meta::ConnectionMeta;
+#[cfg(target_os = "linux")]
+#[path = "server/dbus.rs"]
+pub mod dbus;
 /// cbindgen:ignore
 pub mod platform;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

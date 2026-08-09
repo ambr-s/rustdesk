@@ -235,13 +235,18 @@ fn main() {{
     def test_core_main_keeps_outgoing_cli_branch_compiled(self) -> None:
         source = (REPO_ROOT / "src/core_main.rs").read_text()
         start = source.index("if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {")
-        body = source[start:source.index("\n    }\n    //_async_logger_holder", start)]
+        body = source[start:source.index("\n    //_async_logger_holder", start)]
         else_marker = "\n    } else {\n"
         self.assertIn(else_marker, body)
-        server_branch, _outgoing_branch = body.split(else_marker, 1)
+        server_branch, outgoing_branch = body.split(else_marker, 1)
         self.assertIn("std::thread::spawn(move || crate::start_server(false, no_server));", server_branch)
+        self.assertIn("crate::ui_interface::start_option_status_sync();", outgoing_branch)
+
+        invoke_start = source.index("fn core_main_invoke_new_connection(")
+        invoke_end = source.index("\n}\n\n#[cfg(all(target_os = \"linux\", feature = \"flutter\"))]", invoke_start)
+        invoke_body = source[invoke_start:invoke_end]
         for outgoing_cli in ("--connect", "--file-transfer", "--terminal", "--port-forward"):
-            self.assertIn(outgoing_cli, source)
+            self.assertIn(outgoing_cli, invoke_body)
         self.assertIn("return core_main_invoke_new_connection(std::env::args());", source)
 
         lines = source.splitlines()
@@ -304,6 +309,16 @@ fn main() {{
                 f"pub mod {module};",
                 source,
             )
+
+    def test_neutral_dbus_routing_is_outside_the_host_server_module(self) -> None:
+        library = (REPO_ROOT / "src/lib.rs").read_text()
+        server = (REPO_ROOT / "src/server.rs").read_text()
+
+        self.assertIn(
+            '#[cfg(target_os = "linux")]\n#[path = "server/dbus.rs"]\npub mod dbus;',
+            library,
+        )
+        self.assertNotIn("pub mod dbus;", server)
 
 
 if __name__ == "__main__":

@@ -421,6 +421,7 @@ pub fn set_options(m: HashMap<String, String>) {
 #[inline]
 pub fn set_option(key: String, value: String) {
     if &key == "stop-service" {
+        #[cfg(feature = "host-services")]
         #[cfg(target_os = "macos")]
         {
             let is_stop = value == "Y";
@@ -428,6 +429,7 @@ pub fn set_option(key: String, value: String) {
                 return;
             }
         }
+        #[cfg(feature = "host-services")]
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         {
             if crate::platform::is_installed() {
@@ -444,7 +446,7 @@ pub fn set_option(key: String, value: String) {
             }
         }
     } else if &key == "audio-input" {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(all(not(target_os = "ios"), feature = "host-services"))]
         crate::audio_service::restart();
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1197,8 +1199,16 @@ pub fn is_root() -> bool {
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[inline]
 pub fn check_super_user_permission() -> bool {
-    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[cfg(all(
+        any(windows, target_os = "linux", target_os = "macos"),
+        feature = "host-services"
+    ))]
     return crate::platform::check_super_user_permission().unwrap_or(false);
+    #[cfg(all(
+        any(windows, target_os = "linux", target_os = "macos"),
+        not(feature = "host-services")
+    ))]
+    return false;
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     return true;
 }

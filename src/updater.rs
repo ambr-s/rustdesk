@@ -105,8 +105,13 @@ pub fn stop_auto_update() {
 /// Returns true when there are no active incoming or outgoing connections.
 /// Used to avoid updating while a remote session is in progress.
 pub fn has_no_active_conns() -> bool {
-    let conns = crate::Connection::alive_conns();
-    conns.is_empty() && has_no_controlling_conns()
+    #[cfg(feature = "host-services")]
+    {
+        let conns = crate::Connection::alive_conns();
+        return conns.is_empty() && has_no_controlling_conns();
+    }
+    #[cfg(not(feature = "host-services"))]
+    has_no_controlling_conns()
 }
 
 #[cfg(any(not(target_os = "windows"), feature = "flutter"))]
