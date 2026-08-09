@@ -364,6 +364,17 @@ fn main() {{
         self.assertIn("peer.send(&msg).await", voice)
         self.assertIn("on_voice_call_waiting", voice)
 
+    def test_controller_remote_close_updates_voice_call_state_without_local_recorder(self) -> None:
+        source = (REPO_ROOT / "src/client/io_loop.rs").read_text()
+        start = source.index("                Some(message::Union::VoiceCallRequest(request)) => {")
+        end = source.index("                Some(message::Union::VoiceCallResponse(response)) => {", start)
+        close_branch = source[start:end]
+
+        self.assertIn(
+            '                        }\n                        self.handler.on_voice_call_closed("");',
+            close_branch,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

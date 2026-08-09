@@ -2093,8 +2093,8 @@ impl<T: InvokeUiSession> Remote<T> {
                         #[cfg(feature = "host-services")]
                         if let Some(sender) = self.stop_voice_call_sender.take() {
                             allow_err!(sender.send(()));
-                            self.handler.on_voice_call_closed("");
                         }
+                        self.handler.on_voice_call_closed("");
                     }
                 }
                 Some(message::Union::VoiceCallResponse(response)) => {
