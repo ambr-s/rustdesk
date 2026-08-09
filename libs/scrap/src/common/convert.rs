@@ -6,14 +6,21 @@
 
 include!(concat!(env!("OUT_DIR"), "/yuv_ffi.rs"));
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(feature = "capture")]
+use crate::generate_call_macro;
+#[cfg(feature = "capture")]
+use crate::EncodeYuvFormat;
+#[cfg(all(not(target_os = "ios"), feature = "capture"))]
 use crate::PixelBuffer;
-use crate::{generate_call_macro, EncodeYuvFormat, TraitPixelBuffer};
+#[cfg(feature = "capture")]
+use crate::TraitPixelBuffer;
+#[cfg(feature = "capture")]
 use hbb_common::{bail, log, ResultType};
 
+#[cfg(feature = "capture")]
 generate_call_macro!(call_yuv, false);
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(all(not(target_os = "ios"), feature = "capture"))]
 pub fn convert_to_yuv(
     captured: &PixelBuffer,
     dst_fmt: EncodeYuvFormat,
@@ -198,7 +205,7 @@ pub fn convert_to_yuv(
     Ok(())
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(all(not(target_os = "ios"), feature = "capture"))]
 pub fn convert(captured: &PixelBuffer, pixfmt: crate::Pixfmt, dst: &mut Vec<u8>) -> ResultType<()> {
     if captured.pixfmt() == pixfmt {
         dst.extend_from_slice(captured.data());

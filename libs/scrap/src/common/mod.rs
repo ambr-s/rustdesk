@@ -7,10 +7,10 @@ use hbb_common::{
 use std::{ffi::c_void, slice};
 
 cfg_if! {
-    if #[cfg(quartz)] {
+    if #[cfg(all(quartz, feature = "capture"))] {
         mod quartz;
         pub use self::quartz::*;
-    } else if #[cfg(x11)] {
+    } else if #[cfg(all(x11, feature = "capture"))] {
         cfg_if! {
             if #[cfg(feature="wayland")] {
                 mod linux;
@@ -30,10 +30,10 @@ cfg_if! {
                 pub use self::x11::*;
             }
         }
-    } else if #[cfg(dxgi)] {
+    } else if #[cfg(all(dxgi, feature = "capture"))] {
         mod dxgi;
         pub use self::dxgi::*;
-    } else if #[cfg(target_os = "android")] {
+    } else if #[cfg(all(target_os = "android", feature = "capture"))] {
         mod android;
         pub use self::android::*;
     }else {
@@ -55,7 +55,7 @@ pub const STRIDE_ALIGN: usize = 64; // commonly used in libvpx vpx_img_alloc cal
 pub const HW_STRIDE_ALIGN: usize = 0; // recommended by av_frame_get_buffer
 
 pub mod aom;
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(all(not(any(target_os = "ios")), feature = "capture"))]
 pub mod camera;
 pub mod record;
 mod vpx;
@@ -132,6 +132,7 @@ pub fn would_block_if_equal(old: &mut Vec<u8>, b: &[u8]) -> std::io::Result<()> 
     Ok(())
 }
 
+#[cfg(feature = "capture")]
 pub trait TraitCapturer {
     // We doesn't support
     #[cfg(not(any(target_os = "ios")))]
@@ -166,6 +167,7 @@ impl Default for AdapterDevice {
     }
 }
 
+#[cfg(feature = "capture")]
 pub trait TraitPixelBuffer {
     fn data(&self) -> &[u8];
 
@@ -178,13 +180,13 @@ pub trait TraitPixelBuffer {
     fn pixfmt(&self) -> Pixfmt;
 }
 
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(all(not(any(target_os = "ios")), feature = "capture"))]
 pub enum Frame<'a> {
     PixelBuffer(PixelBuffer<'a>),
     Texture((*mut c_void, usize)),
 }
 
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(all(not(any(target_os = "ios")), feature = "capture"))]
 impl Frame<'_> {
     pub fn valid<'a>(&'a self) -> bool {
         match self {
@@ -265,13 +267,13 @@ pub struct EncodeYuvFormat {
     pub v: usize,
 }
 
-#[cfg(x11)]
+#[cfg(all(x11, feature = "capture"))]
 #[inline]
 pub fn is_x11() -> bool {
     hbb_common::platform::linux::is_x11_or_headless()
 }
 
-#[cfg(x11)]
+#[cfg(all(x11, feature = "capture"))]
 #[inline]
 pub fn is_cursor_embedded() -> bool {
     if is_x11() {
@@ -281,7 +283,7 @@ pub fn is_cursor_embedded() -> bool {
     }
 }
 
-#[cfg(not(x11))]
+#[cfg(not(all(x11, feature = "capture")))]
 #[inline]
 pub fn is_cursor_embedded() -> bool {
     false

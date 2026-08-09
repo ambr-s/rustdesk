@@ -1,26 +1,26 @@
-#[cfg(quartz)]
+#[cfg(all(quartz, feature = "capture"))]
 extern crate block;
 #[macro_use]
 extern crate cfg_if;
 pub use hbb_common::libc;
-#[cfg(dxgi)]
+#[cfg(all(dxgi, feature = "capture"))]
 extern crate winapi;
 
 pub use common::*;
 
-#[cfg(quartz)]
+#[cfg(all(quartz, feature = "capture"))]
 pub mod quartz;
 
-#[cfg(x11)]
+#[cfg(all(x11, feature = "capture"))]
 pub mod x11;
 
-#[cfg(all(x11, feature = "wayland"))]
+#[cfg(all(x11, feature = "capture", feature = "wayland"))]
 pub mod wayland;
 
-#[cfg(dxgi)]
+#[cfg(all(dxgi, feature = "capture"))]
 pub mod dxgi;
 
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "capture"))]
 pub mod android;
 
 mod common;

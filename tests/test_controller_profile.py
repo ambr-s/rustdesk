@@ -59,6 +59,40 @@ class ControllerBuildProfileTests(unittest.TestCase):
             "controller dependency closure contains host-only crates:\n" + result.stdout,
         )
 
+    def test_controller_scrap_closure_excludes_local_capture_backends(self) -> None:
+        forbidden = {
+            "dbus",
+            "drm",
+            "drm-ffi",
+            "drm-fourcc",
+            "drm-sys",
+            "gstreamer",
+            "gstreamer-app",
+            "gstreamer-video",
+            "nokhwa",
+            "nokhwa-bindings-linux",
+            "v4l",
+            "zbus",
+        }
+        result = subprocess.run(
+            [
+                "cargo", "tree", "--locked", "--no-default-features",
+                "--features", "decode,linux-pkg-config",
+                "--prefix", "none", "--format", "{p}", "-e", "normal", "-p", "scrap",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        packages = {line.split(" ", 1)[0] for line in result.stdout.splitlines() if line}
+        self.assertEqual(
+            sorted(packages & forbidden), [],
+            "controller scrap closure contains local capture crates:\n" + result.stdout,
+        )
+
     def test_cargo_metadata_describes_the_profile_features(self) -> None:
         import json
 

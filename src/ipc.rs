@@ -1144,11 +1144,11 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::WaylandScreencastRestoreToken((key, value)) => {
             let v = if value == "get" {
                 let opt = get_local_option(key.clone());
-                #[cfg(not(target_os = "linux"))]
+                #[cfg(not(all(target_os = "linux", feature = "host-services")))]
                 {
                     Some(opt)
                 }
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", feature = "host-services"))]
                 {
                     let v = if opt.is_empty() {
                         if scrap::wayland::pipewire::is_rdp_session_hold() {
@@ -1163,7 +1163,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                 }
             } else if value == "clear" {
                 set_local_option(key.clone(), "".to_owned());
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", feature = "host-services"))]
                 scrap::wayland::pipewire::close_session();
                 Some("".to_owned())
             } else {
