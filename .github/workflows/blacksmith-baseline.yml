@@ -363,7 +363,7 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Setup MSVC developer command prompt
-        timeout-minutes: 45
+        timeout-minutes: 20
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -390,13 +390,26 @@ jobs:
             '--add', 'Microsoft.VisualStudio.Component.Windows11SDK.26100'
           )
           $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -PassThru -NoNewWindow
-          # Avoid waiting for long-lived installer descendants.
-          $process.WaitForExit()
-          if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
-          $vcInstallations = @(& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
-          if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while verifying MSVC x64' }
-          $installation = $vcInstallations | Where-Object { $_ -and ([IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -eq [IO.Path]::GetFullPath($installPath).TrimEnd('\')) } | Select-Object -First 1
-          if (-not $installation) { throw "Pinned C++ Build Tools installation was not registered at $installPath" }
+          $targetPath = [IO.Path]::GetFullPath($installPath).TrimEnd('\')
+          $deadline = (Get-Date).AddMinutes(15)
+          $installation = $null
+          do {
+            $vcInstallations = @(& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.Windows11SDK.26100 -property installationPath)
+            if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while verifying C++ Build Tools' }
+            $installation = $vcInstallations | Where-Object {
+              $_ -and ([IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -eq $targetPath)
+            } | Select-Object -First 1
+            if ($installation) { break }
+            if ($process.HasExited -and $process.ExitCode -notin @(0, 3010)) {
+              throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)"
+            }
+            Start-Sleep -Seconds 5
+          } while ((Get-Date) -lt $deadline)
+          if (-not $installation) {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            throw "Pinned C++ Build Tools installation was not registered at $installPath"
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           $installation = $installation.Trim()
           $devCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
           if (-not (Test-Path $devCmd)) { throw "VsDevCmd.bat is unavailable: $devCmd" }
@@ -431,7 +444,13 @@ jobs:
           $destination = Join-Path $env:RUNNER_TEMP 'visual-studio-setup-diagnostics'
           New-Item -ItemType Directory -Force $destination | Out-Null
           Get-ChildItem -Path $env:TEMP -File -Filter 'dd_*' | ForEach-Object {
-            Copy-Item -Force $_.FullName (Join-Path $destination $_.Name)
+            $target = Join-Path $destination $_.Name
+            Copy-Item -Force $_.FullName $target
+            if ($_.Extension -eq '.log' -or $_.Extension -eq '.txt') {
+              @(Get-Content $target) | Where-Object {
+                $_ -notmatch 'InstrumentationKey|CollectorApiKey'
+              } | Set-Content $target
+            }
           }
           $instances = 'C:\ProgramData\Microsoft\VisualStudio\Packages\_Instances'
           if (Test-Path $instances) {
