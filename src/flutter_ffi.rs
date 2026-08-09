@@ -1307,11 +1307,18 @@ pub fn main_set_input_source(session_id: SessionID, value: String) {
 /// - Windows/macOS/Linux: attempts to move the cursor to (x, y)
 /// - Android/iOS: no-op, always returns `false`
 pub fn main_set_cursor_position(x: i32, y: i32) -> SyncReturn<bool> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     {
         SyncReturn(crate::set_cursor_pos(x, y))
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        not(feature = "host-services")
+    ))]
     {
         let _ = (x, y);
         SyncReturn(false)
@@ -1341,7 +1348,10 @@ pub fn main_clip_cursor(
     bottom: i32,
     enable: bool,
 ) -> SyncReturn<bool> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     {
         let rect = if enable {
             Some((left, top, right, bottom))
@@ -1350,7 +1360,11 @@ pub fn main_clip_cursor(
         };
         SyncReturn(crate::clip_cursor(rect))
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        not(feature = "host-services")
+    ))]
     {
         let _ = (left, top, right, bottom, enable);
         SyncReturn(false)

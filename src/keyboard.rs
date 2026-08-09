@@ -975,24 +975,12 @@ pub fn event_to_key_events(
         KeyboardMode::Map => map_keyboard_mode(peer.as_str(), event, key_event),
         KeyboardMode::Translate => translate_keyboard_mode(peer.as_str(), event, key_event),
         _ => {
-            #[cfg(all(
-                not(any(target_os = "android", target_os = "ios")),
-                feature = "host-services"
-            ))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 legacy_keyboard_mode(event, key_event)
             }
             #[cfg(any(target_os = "android", target_os = "ios"))]
-            {
-                Vec::new()
-            }
-            #[cfg(all(
-                not(any(target_os = "android", target_os = "ios")),
-                not(feature = "host-services")
-            ))]
-            {
-                Vec::new()
-            }
+            Vec::new()
         }
     };
 
@@ -1026,6 +1014,33 @@ pub fn send_key_event(key_event: &KeyEvent) {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn legacy_modifier_state(key: Key) -> bool {
+    #[cfg(feature = "host-services")]
+    {
+        let key = match key {
+            Key::Alt => enigo::Key::Alt,
+            Key::ControlLeft => enigo::Key::Control,
+            Key::ControlRight => enigo::Key::RightControl,
+            Key::ShiftLeft => enigo::Key::Shift,
+            Key::ShiftRight => enigo::Key::RightShift,
+            Key::MetaLeft | Key::MetaRight => enigo::Key::Meta,
+            Key::AltGr => enigo::Key::RightAlt,
+            _ => return false,
+        };
+        return get_key_state(key);
+    }
+    #[cfg(not(feature = "host-services"))]
+    {
+        MODIFIERS_STATE
+            .lock()
+            .unwrap()
+            .get(&key)
+            .copied()
+            .unwrap_or(false)
+    }
+}
+
 pub fn get_peer_platform() -> String {
     #[cfg(not(feature = "flutter"))]
     if let Some(session) = CUR_SESSION.lock().unwrap().as_ref() {
@@ -1038,14 +1053,11 @@ pub fn get_peer_platform() -> String {
     "Windows".to_string()
 }
 
-#[cfg(all(
-    not(any(target_os = "android", target_os = "ios")),
-    feature = "host-services"
-))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn legacy_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Vec<KeyEvent> {
     let mut events = Vec::new();
     // legacy mode(0): Generate characters locally, look for keycode on other side.
-    let (mut key, down_or_up) = match event.event_type {
+    let (key, down_or_up) = match event.event_type {
         EventType::KeyPress(key) => (key, true),
         EventType::KeyRelease(key) => (key, false),
         _ => {
@@ -1055,14 +1067,14 @@ pub fn legacy_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Vec<KeyEv
 
     let peer = get_peer_platform();
     let is_win = peer == "Windows";
-    if is_win {
-        key = convert_numpad_keys(key);
-    }
+    #[cfg(feature = "host-services")]
+    let key = if is_win { convert_numpad_keys(key) } else { key };
 
-    let alt = get_key_state(enigo::Key::Alt);
+    let alt = legacy_modifier_state(Key::Alt);
     #[cfg(windows)]
     let ctrl = {
-        let mut tmp = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
+        let mut tmp = legacy_modifier_state(Key::ControlLeft)
+            || legacy_modifier_state(Key::ControlRight);
         unsafe {
             if IS_ALT_GR {
                 if alt || key == Key::AltGr {
@@ -1077,12 +1089,12 @@ pub fn legacy_keyboard_mode(event: &Event, mut key_event: KeyEvent) -> Vec<KeyEv
         tmp
     };
     #[cfg(not(windows))]
-    let ctrl = get_key_state(enigo::Key::Control) || get_key_state(enigo::Key::RightControl);
-    let shift = get_key_state(enigo::Key::Shift) || get_key_state(enigo::Key::RightShift);
+    let ctrl = legacy_modifier_state(Key::ControlLeft) || legacy_modifier_state(Key::ControlRight);
+    let shift = legacy_modifier_state(Key::ShiftLeft) || legacy_modifier_state(Key::ShiftRight);
     #[cfg(windows)]
     let command = crate::platform::windows::get_win_key_state();
     #[cfg(not(windows))]
-    let command = get_key_state(enigo::Key::Meta);
+    let command = legacy_modifier_state(Key::MetaLeft) || legacy_modifier_state(Key::MetaRight);
     let control_key = match key {
         Key::Alt => Some(ControlKey::Alt),
         Key::AltGr => Some(ControlKey::RAlt),
@@ -1664,5 +1676,53 @@ pub mod input_source {
                 CONFIG_INPUT_SOURCE_2_TIP.to_string(),
             ),
         ]
+    }
+}
+
+#[cfg(all(test, target_os = "linux", not(feature = "host-services")))]
+mod controller_keyboard_tests {
+    use super::*;
+    use std::time::SystemTime;
+
+    fn key_event(event_type: EventType, unicode: Option<&str>) -> Event {
+        Event {
+            time: SystemTime::UNIX_EPOCH,
+            unicode: unicode.map(|name| rdev::UnicodeInfo {
+                name: Some(name.to_string()),
+                ..Default::default()
+            }),
+            event_type,
+            platform_code: 0,
+            position_code: 0,
+            usb_hid: 0,
+        }
+    }
+
+    #[test]
+    fn legacy_controller_events_preserve_modifier_state_and_key_controls() {
+        let _ = event_to_key_events(
+            "Linux".to_string(),
+            &key_event(EventType::KeyPress(Key::ControlLeft), None),
+            KeyboardMode::Legacy,
+            None,
+        );
+        let events = event_to_key_events(
+            "Linux".to_string(),
+            &key_event(EventType::KeyPress(Key::KeyA), Some("a")),
+            KeyboardMode::Legacy,
+            None,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert!(events[0].modifiers.contains(&ControlKey::Control.into()));
+
+        let numpad = event_to_key_events(
+            "Windows".to_string(),
+            &key_event(EventType::KeyPress(Key::Kp1), None),
+            KeyboardMode::Legacy,
+            None,
+        );
+        assert_eq!(numpad.len(), 1);
+        assert!(numpad[0].has_control_key());
     }
 }

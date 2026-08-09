@@ -216,6 +216,7 @@ pub fn get_pids_of_process_with_first_arg<S1: AsRef<str>, S2: AsRef<str>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "host-services")]
     #[test]
     fn test_cursor_data() {
         for _ in 0..30 {
@@ -233,6 +234,7 @@ mod tests {
             macos::is_process_trusted(false);
         }
     }
+    #[cfg(feature = "host-services")]
     #[test]
     fn test_get_cursor_pos() {
         for _ in 0..30 {

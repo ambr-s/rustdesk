@@ -1,4 +1,6 @@
-use super::{CursorData, ResultType};
+use super::ResultType;
+#[cfg(feature = "host-services")]
+use super::CursorData;
 #[cfg(feature = "host-services")]
 use super::gtk_sudo;
 use desktop::Desktop;
@@ -321,8 +323,6 @@ pub fn set_cursor_pos(_x: i32, _y: i32) -> bool { false }
 pub fn get_focused_display(_displays: Vec<DisplayInfo>) -> Option<usize> { None }
 #[cfg(not(feature = "host-services"))]
 pub fn get_cursor() -> ResultType<Option<u64>> { Ok(None) }
-#[cfg(not(feature = "host-services"))]
-pub fn get_cursor_data(_hcursor: u64) -> ResultType<CursorData> { Ok(Default::default()) }
 
 #[cfg(feature = "host-services")]
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {

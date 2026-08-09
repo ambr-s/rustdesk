@@ -187,6 +187,18 @@ fn main() {{
                 with self.assertRaisesRegex(ValueError, "controller-only"):
                     build.resolve_profile(Namespace(**values))
 
+    def test_controller_does_not_export_host_cursor_capture_api(self) -> None:
+        library = (REPO_ROOT / "src/lib.rs").read_text()
+        self.assertRegex(
+            library,
+            r"#\[cfg\(all\(\s*not\(any\(target_os = \"android\", target_os = \"ios\"\)\),\s*feature = \"host-services\"\s*\)\)\]\s*pub use platform::\{",
+        )
+        export = library[library.index("pub use platform::{"): library.index("};", library.index("pub use platform::{"))]
+        self.assertIn("get_cursor_data", export)
+
+        linux = (REPO_ROOT / "src/platform/linux.rs").read_text()
+        self.assertNotIn("pub fn get_cursor_data(_hcursor: u64)", linux)
+
     def test_controller_skip_cargo_is_rejected_by_the_cli(self) -> None:
         args = Namespace(controller_only=True, flutter=False, hwcodec=False, vram=False,
                          unix_file_copy_paste=False, drm=False, skip_cargo=True)

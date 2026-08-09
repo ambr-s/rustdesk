@@ -11,7 +11,10 @@ pub use connection_meta::ConnectionMeta;
 pub mod dbus;
 /// cbindgen:ignore
 pub mod platform;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 pub use platform::{
     clip_cursor, get_cursor, get_cursor_data, get_cursor_pos, get_focused_display,
     set_cursor_pos,
