@@ -11,6 +11,8 @@ import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:get/get.dart';
 
 abstract interface class ControllerBridge {
+  void addPeerCollectionsListener(VoidCallback listener);
+  void removePeerCollectionsListener(VoidCallback listener);
   Future<void> initialize();
   Future<ControllerPeerCollections> peerCollections();
   Future<List<ControllerPeer>> peers();
@@ -112,10 +114,47 @@ class ControllerServerConfig {
 
 /// Production outgoing bridge. Session pages own and start their session FFI.
 class RustDeskControllerBridge implements ControllerBridge {
+  static int _nextAddressBookListenerId = 0;
+  final _addressBookListenerKey =
+      'controller-peer-collections-${_nextAddressBookListenerId++}';
+  final _peerCollectionsListeners = <VoidCallback>[];
+  bool _peerModelListenersAttached = false;
+
+  void _notifyPeerCollectionsListeners() {
+    for (final listener in List<VoidCallback>.of(_peerCollectionsListeners)) {
+      listener();
+    }
+  }
+
+  @override
+  void addPeerCollectionsListener(VoidCallback listener) {
+    _peerCollectionsListeners.add(listener);
+  }
+
+  @override
+  void removePeerCollectionsListener(VoidCallback listener) {
+    _peerCollectionsListeners.remove(listener);
+    if (_peerCollectionsListeners.isEmpty && _peerModelListenersAttached) {
+      gFFI.recentPeersModel.removeListener(_notifyPeerCollectionsListeners);
+      gFFI.favoritePeersModel.removeListener(_notifyPeerCollectionsListeners);
+      gFFI.abModel.removePeerUpdateListener(_addressBookListenerKey);
+      _peerModelListenersAttached = false;
+    }
+  }
+
   @override
   Future<void> initialize() async {
     await platformFFI.init(kAppTypeMain);
     await initGlobalFFI();
+    if (_peerCollectionsListeners.isNotEmpty && !_peerModelListenersAttached) {
+      gFFI.recentPeersModel.addListener(_notifyPeerCollectionsListeners);
+      gFFI.favoritePeersModel.addListener(_notifyPeerCollectionsListeners);
+      gFFI.abModel.addPeerUpdateListener(
+        _addressBookListenerKey,
+        _notifyPeerCollectionsListeners,
+      );
+      _peerModelListenersAttached = true;
+    }
     await Future.wait([
       bind.mainLoadRecentPeers(),
       bind.mainLoadFavPeers(),
@@ -206,31 +245,126 @@ class RustDeskControllerBridge implements ControllerBridge {
 
   @override
   Widget sessionPage(ControllerSession session) {
-    switch (session.kind) {
-      case ControllerSessionKind.desktop:
-        return RemotePage(
-          id: session.peerId,
-          toolbarState: ToolbarState(),
-          forceRelay: session.forceRelay,
-        );
-      case ControllerSessionKind.fileTransfer:
-        return FileManagerPage(
-          id: session.peerId,
-          password: null,
-          isSharedPassword: false,
-          forceRelay: session.forceRelay,
-          tabController: DesktopTabController(tabType: DesktopTabType.cm),
-        );
-      case ControllerSessionKind.terminal:
-        return TerminalPage(
-          id: session.peerId,
-          password: null,
-          tabController: DesktopTabController(tabType: DesktopTabType.cm),
-          isSharedPassword: false,
-          forceRelay: session.forceRelay,
-          terminalId: session.peerId.hashCode,
-          tabKey: session.peerId,
-        );
-    }
+    return ControllerSessionScope(
+      session: session,
+      builder: (tabController, tabKey) {
+        switch (session.kind) {
+          case ControllerSessionKind.desktop:
+            return RemotePage(
+              id: session.peerId,
+              toolbarState: ToolbarState(),
+              forceRelay: session.forceRelay,
+              tabController: tabController,
+            );
+          case ControllerSessionKind.fileTransfer:
+            return FileManagerPage(
+              id: session.peerId,
+              password: null,
+              isSharedPassword: false,
+              forceRelay: session.forceRelay,
+              tabController: tabController,
+            );
+          case ControllerSessionKind.terminal:
+            return TerminalPage(
+              id: session.peerId,
+              password: null,
+              tabController: tabController,
+              isSharedPassword: false,
+              forceRelay: session.forceRelay,
+              terminalId: session.peerId.hashCode,
+              tabKey: tabKey,
+            );
+        }
+      },
+    );
   }
+}
+
+typedef ControllerSessionPageBuilder = Widget Function(
+  DesktopTabController controller,
+  String tabKey,
+);
+
+class ControllerSessionScope extends StatefulWidget {
+  const ControllerSessionScope({
+    super.key,
+    required this.session,
+    required this.builder,
+  });
+
+  final ControllerSession session;
+  final ControllerSessionPageBuilder builder;
+
+  @override
+  State<ControllerSessionScope> createState() => _ControllerSessionScopeState();
+}
+
+class _ControllerSessionScopeState extends State<ControllerSessionScope> {
+  late final DesktopTabController tabController;
+  late final String tabKey;
+  late final Widget page;
+  bool _closing = false;
+  bool _registrationConflict = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Get.isRegistered<DesktopTabController>()) {
+      _registrationConflict = true;
+      return;
+    }
+    tabController = DesktopTabController(
+        tabType: switch (widget.session.kind) {
+      ControllerSessionKind.desktop => DesktopTabType.remoteScreen,
+      ControllerSessionKind.fileTransfer => DesktopTabType.fileTransfer,
+      ControllerSessionKind.terminal => DesktopTabType.terminal,
+    });
+    tabKey = widget.session.kind == ControllerSessionKind.terminal
+        ? '${widget.session.peerId}_${widget.session.peerId.hashCode}'
+        : widget.session.peerId;
+    Get.put<DesktopTabController>(tabController);
+    page = widget.builder(tabController, tabKey);
+    tabController.onRemoved = (_, __) => _closeRoute();
+    if (widget.session.kind == ControllerSessionKind.terminal) {
+      tabController.onCloseWindow = () async => _closeRoute();
+    }
+    tabController.state.value.tabs.add(TabInfo(
+      key: tabKey,
+      label: widget.session.peerId,
+      page: page,
+    ));
+    tabController.state.value.scrollController.itemCount = 1;
+    tabController.state.value.selected = 0;
+    tabController.state.refresh();
+  }
+
+  void _closeRoute() {
+    if (_closing || !mounted) return;
+    _closing = true;
+    Navigator.of(context).maybePop();
+  }
+
+  @override
+  void dispose() {
+    if (_registrationConflict) {
+      super.dispose();
+      return;
+    }
+    tabController.onRemoved = null;
+    tabController.onCloseWindow = null;
+    if (Get.isRegistered<DesktopTabController>() &&
+        identical(Get.find<DesktopTabController>(), tabController)) {
+      Get.delete<DesktopTabController>(force: true);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _registrationConflict
+      ? const Center(
+          child: Text(
+            'Close the active controller session before opening another.',
+          ),
+        )
+      : page;
 }

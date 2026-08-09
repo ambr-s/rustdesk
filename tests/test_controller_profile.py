@@ -211,6 +211,13 @@ fn main() {{
         self.assertIn("compile_error!", library[:500])
         self.assertIn("--no-default-features", library[:500])
 
+    def test_direct_cargo_controller_profile_rejects_non_linux_targets(self) -> None:
+        library = (REPO_ROOT / "src/lib.rs").read_text()
+        self.assertRegex(
+            library,
+            r'#\[cfg\(all\(feature = "controller-only", not\(target_os = "linux"\)\)\)\]\s*compile_error!\(',
+        )
+
 
     def test_controller_profile_rejects_host_capability_flags(self) -> None:
         for flag in ("drm", "unix_file_copy_paste", "vram"):
@@ -564,6 +571,23 @@ fn main() {{
         platform_init = source.index("await platformFFI.init(kAppTypeMain)")
         global_init = source.index("await initGlobalFFI()")
         self.assertLess(platform_init, global_init)
+
+    def test_controller_bridge_observes_address_book_peer_updates(self) -> None:
+        bridge = (REPO_ROOT / "flutter/lib/controller/controller_bridge.dart").read_text()
+        self.assertIn("gFFI.abModel.addPeerUpdateListener", bridge)
+        self.assertIn("gFFI.abModel.removePeerUpdateListener", bridge)
+
+    def test_controller_bridge_uses_a_unique_address_book_listener_key(self) -> None:
+        bridge = (REPO_ROOT / "flutter/lib/controller/controller_bridge.dart").read_text()
+        self.assertNotIn("static const _addressBookListenerKey", bridge)
+        self.assertIn("_nextAddressBookListenerId++", bridge)
+
+    def test_controller_bridge_does_not_attach_native_listeners_after_dispose(self) -> None:
+        bridge = (REPO_ROOT / "flutter/lib/controller/controller_bridge.dart").read_text()
+        self.assertIn(
+            "if (_peerCollectionsListeners.isNotEmpty && !_peerModelListenersAttached)",
+            bridge,
+        )
 
     def test_controller_closure_does_not_dereference_required_host_model(self) -> None:
         for relative in (

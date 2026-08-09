@@ -19,37 +19,81 @@ class _ControllerAppState extends State<ControllerApp> {
   final apiServer = TextEditingController();
   final key = TextEditingController();
   ControllerPeerCollections collections = const ControllerPeerCollections();
-  String? error;
+  String? startupError;
+  String? peerError;
+  String? actionError;
   final navigatorKey = GlobalKey<NavigatorState>();
+  int _peerCollectionsGeneration = 0;
+  int _serverConfigGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    bridge.addPeerCollectionsListener(_refreshPeerCollections);
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _refreshPeerCollections() async {
+    final generation = ++_peerCollectionsGeneration;
     try {
-      await bridge.initialize();
-      final loaded = await bridge.peerCollections();
-      final config = await bridge.serverConfig();
-      if (mounted) {
+      final updated = await bridge.peerCollections();
+      if (mounted && generation == _peerCollectionsGeneration) {
         setState(() {
-          collections = loaded;
-          idServer.text = config.id;
-          relayServer.text = config.relay;
-          apiServer.text = config.api;
-          key.text = config.key;
-          error = null;
+          collections = updated;
+          peerError = null;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted && generation == _peerCollectionsGeneration) {
+        setState(() => peerError = '$e');
+      }
+    }
+  }
+
+  Future<void> _load() async {
+    final configGeneration = ++_serverConfigGeneration;
+    try {
+      await bridge.initialize();
+    } catch (e) {
+      if (mounted) setState(() => startupError = '$e');
+      return;
+    }
+
+    final generation = ++_peerCollectionsGeneration;
+    try {
+      final loaded = await bridge.peerCollections();
+      if (mounted && generation == _peerCollectionsGeneration) {
+        setState(() {
+          collections = loaded;
+          peerError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted && generation == _peerCollectionsGeneration) {
+        setState(() => peerError = '$e');
+      }
+    }
+
+    try {
+      final config = await bridge.serverConfig();
+      if (!mounted || configGeneration != _serverConfigGeneration) return;
+      setState(() {
+        idServer.text = config.id;
+        relayServer.text = config.relay;
+        apiServer.text = config.api;
+        key.text = config.key;
+        startupError = null;
+      });
+    } catch (e) {
+      if (mounted && configGeneration == _serverConfigGeneration) {
+        setState(() => startupError = '$e');
+      }
     }
   }
 
   @override
   void dispose() {
+    bridge.removePeerCollectionsListener(_refreshPeerCollections);
     idController.dispose();
     idServer.dispose();
     relayServer.dispose();
@@ -62,18 +106,18 @@ class _ControllerAppState extends State<ControllerApp> {
       [ControllerSessionKind kind = ControllerSessionKind.desktop]) async {
     final id = idController.text.trim();
     if (id.isEmpty) {
-      setState(() => error = 'Enter a remote ID.');
+      setState(() => actionError = 'Enter a remote ID.');
       return;
     }
     try {
       final session = await bridge.connect(id, kind: kind);
       final page = bridge.sessionPage(session);
       if (!mounted) return;
-      setState(() => error = null);
+      setState(() => actionError = null);
       navigatorKey.currentState!
           .push(MaterialPageRoute<void>(builder: (_) => page));
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => actionError = '$e');
     }
   }
 
@@ -119,6 +163,12 @@ class _ControllerAppState extends State<ControllerApp> {
         ),
       );
 
+  List<String> get _visibleErrors => <String?>[
+        startupError,
+        peerError,
+        actionError
+      ].whereType<String>().toSet().toList(growable: false);
+
   Widget _connectPane() => Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
@@ -147,12 +197,11 @@ class _ControllerAppState extends State<ControllerApp> {
                   icon: const Icon(Icons.terminal),
                   label: const Text('Remote terminal')),
             ]),
-            if (error != null)
-              Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error))),
+            ..._visibleErrors.map((message) => Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Text(message,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error)))),
             if (collections.all.isNotEmpty) ...[
               const Divider(height: 40),
               Text('Saved devices',
@@ -194,6 +243,7 @@ class _ControllerAppState extends State<ControllerApp> {
               ]));
 
   void _showSettings() {
+    ++_serverConfigGeneration;
     final settingsError = ValueNotifier<String?>(null);
     showDialog<void>(
         context: navigatorKey.currentContext!,

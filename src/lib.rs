@@ -3,6 +3,9 @@ compile_error!(
     "controller-only cannot be combined with host-services; use --no-default-features when building the controller profile"
 );
 
+#[cfg(all(feature = "controller-only", not(target_os = "linux")))]
+compile_error!("controller-only is supported only on Linux");
+
 mod keyboard;
 mod connection_meta;
 pub use connection_meta::ConnectionMeta;
