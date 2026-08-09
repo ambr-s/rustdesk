@@ -321,7 +321,7 @@ def linux_packaging_branch():
     return 'deb'
 
 
-def resolve_profile(args, profile_record=None):
+def resolve_profile(args):
     if not args.controller_only:
         return None
     if windows or osx:
@@ -332,8 +332,8 @@ def resolve_profile(args, profile_record=None):
         raise ValueError(
             f'--controller-only cannot be combined with {", ".join("--" + flag.replace("_", "-") for flag in conflicts)}'
         )
-    if getattr(args, 'skip_cargo', False) and profile_record != CONTROLLER_PROFILE_RECORD:
-        raise ValueError('--skip-cargo requires a matching controller-only profile record')
+    if getattr(args, 'skip_cargo', False):
+        raise ValueError('--controller-only cannot be combined with --skip-cargo')
     return CONTROLLER_PROFILE_RECORD.copy()
 
 
@@ -351,6 +351,18 @@ def controller_flutter_command(profile):
         f"flutter build linux --release -t {profile['dart_target']} "
         f"--dart-define={profile['dart_define']}"
     )
+
+
+def reject_incomplete_controller_routes(args):
+    if not args.controller_only:
+        return
+    if args.package:
+        raise SystemExit(
+            '--controller-only --package is unavailable until a dedicated controller artifact path '
+            'is implemented')
+    raise SystemExit(
+        '--controller-only build routes are unavailable until a dedicated controller artifact path '
+        'is implemented')
 
 
 def get_features(args):
@@ -1031,6 +1043,8 @@ def main():
             feats = ','.join(get_features(args))
         print(feats)
         return
+
+    reject_incomplete_controller_routes(args)
 
     if os.path.exists(exe_path):
         os.unlink(exe_path)

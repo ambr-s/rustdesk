@@ -27,7 +27,7 @@ class ControllerBuildProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "controller-only,flutter,use_dasp")
 
-    def test_cargo_metadata_enforces_the_product_boundary(self) -> None:
+    def test_cargo_metadata_describes_the_profile_features(self) -> None:
         import json
 
         result = subprocess.run(
@@ -44,9 +44,25 @@ class ControllerBuildProfileTests(unittest.TestCase):
 
         self.assertIn("controller-only", package["features"])
         self.assertIn("host-services", package["features"])
+        self.assertIn("host-services", package["features"]["default"])
         self.assertNotIn("host-services", package["features"]["controller-only"])
         service = next(target for target in package["targets"] if target["name"] == "service")
         self.assertEqual(service["required-features"], ["host-services"])
+
+    def test_controller_profile_rejects_the_service_binary(self) -> None:
+        result = subprocess.run(
+            [
+                "cargo", "check", "--locked", "--no-default-features",
+                "--features", "controller-only,flutter,use_dasp", "--bin", "service",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("target `service` in package `rustdesk` requires the features: `host-services`", result.stderr)
 
     def test_controller_profile_is_linux_only(self) -> None:
         args = Namespace(controller_only=True, flutter=False, hwcodec=False, vram=False,
@@ -65,15 +81,36 @@ class ControllerBuildProfileTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "controller-only"):
                     build.resolve_profile(Namespace(**values))
 
-    def test_controller_skip_cargo_requires_a_matching_profile_record(self) -> None:
+    def test_controller_skip_cargo_is_rejected_by_the_cli(self) -> None:
         args = Namespace(controller_only=True, flutter=False, hwcodec=False, vram=False,
                          unix_file_copy_paste=False, drm=False, skip_cargo=True)
 
-        with self.assertRaisesRegex(ValueError, "profile record"):
-            build.resolve_profile(args)
+        result = self.run_build("--controller-only", "--skip-cargo")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--controller-only cannot be combined with --skip-cargo", result.stderr)
 
-        profile = build.CONTROLLER_PROFILE_RECORD.copy()
-        self.assertEqual(build.resolve_profile(args, profile), profile)
+    def test_controller_build_routes_fail_closed_before_host_packaging(self) -> None:
+        for extra_args in ((), ("--package", "bundle")):
+            with self.subTest(extra_args=extra_args):
+                with mock.patch.object(build, "build_deb_from_folder") as package:
+                    with mock.patch.object(build, "system2") as system2:
+                        with mock.patch("sys.argv", ["build.py", "--controller-only", *extra_args]):
+                            with self.assertRaises(SystemExit) as raised:
+                                build.main()
+                self.assertIn("dedicated controller artifact path", str(raised.exception))
+                package.assert_not_called()
+                system2.assert_not_called()
+
+    def test_controller_distro_routes_fail_closed_before_host_packaging(self) -> None:
+        with mock.patch.object(build, "linux_packaging_branch", return_value="pacman"):
+            with mock.patch.object(build, "build_flutter_arch_manjaro") as package:
+                with mock.patch.object(build, "system2") as system2:
+                    with mock.patch.object(build, "windows", False), mock.patch.object(build, "osx", False):
+                        with mock.patch("sys.argv", ["build.py", "--controller-only"]):
+                            with self.assertRaises(SystemExit):
+                                build.main()
+        package.assert_not_called()
+        system2.assert_not_called()
 
     def test_controller_commands_are_canonical_and_profile_coupled(self) -> None:
         profile = build.resolve_profile(
