@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_hbb/main.dart';
+import 'package:flutter_hbb/controller_launch_state.dart';
 import 'package:flutter_hbb/common.dart';
 
 enum SystemWindowTheme { light, dark }
@@ -21,7 +21,7 @@ class RdPlatformChannel {
     // No debug output; this call is too chatty.
 
     bool? result = await _hostMethodChannel
-      .invokeMethod("bumpMouse", {"dx": dx, "dy": dy});
+        .invokeMethod("bumpMouse", {"dx": dx, "dy": dy});
 
     return result ?? false;
   }

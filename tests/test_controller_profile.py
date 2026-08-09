@@ -451,6 +451,149 @@ fn main() {{
             close_branch,
         )
 
+    def test_controller_flutter_import_closure_excludes_host_ui_and_capabilities(self) -> None:
+        import re
+
+        entrypoint = REPO_ROOT / "flutter" / "lib" / "controller_main.dart"
+        self.assertTrue(entrypoint.exists())
+        visited = set()
+        violations = []
+        forbidden_paths = {
+            "lib/models/server_model.dart",
+            "lib/desktop/pages/server_page.dart",
+            "lib/mobile/pages/server_page.dart",
+            "lib/desktop/pages/install_page.dart",
+            "lib/mobile/pages/install_page.dart",
+            "lib/mobile/widgets/deploy_dialog.dart",
+        }
+
+        # Only generated bridge implementations are opaque. Every product
+        # owned shared/page/model file must be traversed by this contract.
+        opaque_shared = {
+            "lib/generated_bridge.dart",
+            "lib/web/bridge.dart",
+        }
+
+        def visit(path: Path) -> None:
+            path = path.resolve()
+            normalized = path.as_posix()
+            if normalized in visited:
+                return
+            visited.add(normalized)
+            if not path.exists():
+                violations.append(f"missing local import: {normalized}")
+                return
+            source = path.read_text()
+            relative = path.relative_to(REPO_ROOT / "flutter").as_posix()
+            if relative in opaque_shared:
+                return
+            if relative in forbidden_paths:
+                violations.append(f"forbidden controller closure path: {relative}")
+
+            # Follow the selected IO implementation. A controller build is an
+            # IO Linux build, so html alternatives are not part of its closure.
+            for directive in re.finditer(
+                r"^\s*(?:import|export)\s+(.*?);", source, re.DOTALL | re.MULTILINE
+            ):
+                text = directive.group(1)
+                uris = re.findall(r"(?:^\s*|\b(?:import|export)\s+)['\"]([^'\"]+)['\"]|\bif\s*\([^)]*\)\s*['\"]([^'\"]+)['\"]", text)
+                uris = [first or second for first, second in uris]
+                if "dart.library.html" in text and uris:
+                    uris = uris[:1]
+                for uri in uris:
+                    if uri.startswith("dart:") or uri.startswith("package:") and not uri.startswith("package:flutter_hbb/"):
+                        continue
+                    if uri.startswith("package:flutter_hbb/"):
+                        imported = REPO_ROOT / "flutter" / "lib" / uri[len("package:flutter_hbb/"):]
+                    else:
+                        imported = path.parent / uri
+                        if not imported.exists() and uri.startswith("../"):
+                            # Upstream contains package-relative imports with
+                            # more parent segments than the source file depth.
+                            candidate = uri
+                            while candidate.startswith("../"):
+                                candidate = candidate[3:]
+                                imported = REPO_ROOT / "flutter" / "lib" / candidate
+                                if imported.exists():
+                                    break
+                    visit(imported)
+
+        visit(entrypoint)
+        self.assertIn(
+            (REPO_ROOT / "flutter/lib/controller/controller_bridge.dart").resolve().as_posix(),
+            visited,
+        )
+        self.assertNotIn(
+            (REPO_ROOT / "flutter/lib/main.dart").resolve().as_posix(),
+            visited,
+        )
+        self.assertEqual(violations, [], "\\n".join(violations))
+
+    def test_controller_bridge_uses_real_outgoing_pages_and_ffi(self) -> None:
+        source = (
+            REPO_ROOT / "flutter/lib/controller/controller_bridge.dart"
+        ).read_text()
+
+        for symbol in (
+            "initGlobalFFI()",
+            "bind.mainLoadRecentPeers()",
+            "gFFI.recentPeersModel.peers",
+            "gFFI.favoritePeersModel.peers",
+            "gFFI.abModel.allPeers()",
+            "RemotePage(",
+            "FileManagerPage(",
+            "TerminalPage(",
+        ):
+            self.assertIn(symbol, source)
+        self.assertNotIn("MethodChannel", source)
+        self.assertNotIn("Connected to ${session.peerId}", source)
+
+    def test_controller_bridge_reuses_canonical_server_config_update(self) -> None:
+        source = (
+            REPO_ROOT / "flutter/lib/controller/controller_bridge.dart"
+        ).read_text()
+
+        self.assertIn("setServerConfig(", source)
+        self.assertNotIn("bind.mainSetOption(", source)
+
+    def test_controller_bridge_initializes_native_platform_before_global_ffi(self) -> None:
+        source = (
+            REPO_ROOT / "flutter/lib/controller/controller_bridge.dart"
+        ).read_text()
+
+        platform_init = source.index("await platformFFI.init(kAppTypeMain)")
+        global_init = source.index("await initGlobalFFI()")
+        self.assertLess(platform_init, global_init)
+
+    def test_controller_closure_does_not_dereference_required_host_model(self) -> None:
+        for relative in (
+            "flutter/lib/common/widgets/chat_page.dart",
+            "flutter/lib/models/chat_model.dart",
+            "flutter/lib/models/cm_file_model.dart",
+        ):
+            source = (REPO_ROOT / relative).read_text()
+            self.assertNotIn(".serverModel", source, relative)
+
+    def test_controller_import_scanner_catches_transitive_forbidden_imports(self) -> None:
+        import re
+
+        def scan(files, entry):
+            visited, violations = set(), []
+            def visit(name):
+                if name in visited: return
+                visited.add(name)
+                source = files[name]
+                if name.endswith("server_page.dart"):
+                    violations.append(name)
+                for directive in re.finditer(r"\bimport\b(.*?);", source, re.DOTALL):
+                    for uri in re.findall(r"['\\\"]([^'\\\"]+)['\\\"]", directive.group(1)):
+                        if uri in files: visit(uri)
+            visit(entry)
+            return violations
+
+        self.assertEqual(scan({"entry.dart": "import 'one.dart';", "one.dart": "import 'two.dart';", "two.dart": "import 'server_page.dart';", "server_page.dart": ""}, "entry.dart"), ["server_page.dart"])
+        self.assertEqual(scan({"entry.dart": "import 'one.dart';", "one.dart": "import 'server_page.dart';", "server_page.dart": ""}, "entry.dart"), ["server_page.dart"])
+
 
 if __name__ == "__main__":
     unittest.main()

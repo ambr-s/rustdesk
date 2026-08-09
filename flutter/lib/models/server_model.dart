@@ -16,6 +16,7 @@ import '../desktop/pages/server_page.dart' as desktop;
 import '../desktop/widgets/tabbar_widget.dart';
 import '../mobile/pages/server_page.dart';
 import 'model.dart';
+import 'incoming_host_model.dart';
 
 const kLoginDialogTag = "LOGIN";
 
@@ -23,7 +24,7 @@ const kUseTemporaryPassword = "use-temporary-password";
 const kUsePermanentPassword = "use-permanent-password";
 const kUseBothPasswords = "use-both-passwords";
 
-class ServerModel with ChangeNotifier {
+class ServerModel with ChangeNotifier implements IncomingHostModel {
   bool _isStart = false; // Android MainService status
   bool _mediaOk = false;
   bool _inputOk = false;
@@ -31,6 +32,7 @@ class ServerModel with ChangeNotifier {
   bool _fileOk = false;
   bool _clipboardOk = false;
   bool _showElevation = false;
+  @override
   bool hideCm = false;
   int _connectStatus = 0; // Rendezvous Server status
   String _verificationMethod = "";
@@ -44,10 +46,12 @@ class ServerModel with ChangeNotifier {
   final _serverPasswd =
       TextEditingController(text: translate("Generating ..."));
 
+  @override
   final tabController = DesktopTabController(tabType: DesktopTabType.cm);
 
   final List<Client> _clients = [];
 
+  @override
   Timer? cmHiddenTimer;
 
   final _wakelockKey = UniqueKey();

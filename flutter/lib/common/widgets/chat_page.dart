@@ -5,7 +5,7 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import '../../mobile/pages/home_page.dart';
+import '../page_shape.dart';
 
 enum ChatPageType {
   mobileMain,
@@ -35,13 +35,12 @@ class ChatPage extends StatelessWidget implements PageShape {
         itemBuilder: (context) {
           // only mobile need [appBarActions], just bind gFFI.chatModel
           final chatModel = gFFI.chatModel;
+          final clients = gFFI.incomingHostModel?.clients ?? const [];
           return chatModel.messages.entries.map((entry) {
             final key = entry.key;
             final user = entry.value.chatUser;
-            final client = gFFI.serverModel.clients
-                .firstWhereOrNull((e) => e.id == key.connId);
-            final connected =
-                gFFI.serverModel.clients.any((e) => e.id == key.connId);
+            final client = clients.firstWhereOrNull((e) => e.id == key.connId);
+            final connected = clients.any((e) => e.id == key.connId);
             return PopupMenuItem<MessageKey>(
               child: Row(
                 children: [
@@ -82,13 +81,14 @@ class ChatPage extends StatelessWidget implements PageShape {
         color: Theme.of(context).scaffoldBackgroundColor,
         child: Consumer<ChatModel>(
           builder: (context, chatModel, child) {
+            final clients = gFFI.incomingHostModel?.clients ?? const [];
             final readOnly = type == ChatPageType.mobileMain &&
                     (chatModel.currentKey.connId == ChatModel.clientModeID ||
-                        gFFI.serverModel.clients.every((e) =>
+                        clients.every((e) =>
                             e.id != chatModel.currentKey.connId ||
                             chatModel.currentUser == null)) ||
                 type == ChatPageType.desktopCM &&
-                    gFFI.serverModel.clients
+                    clients
                             .firstWhereOrNull(
                                 (e) => e.id == chatModel.currentKey.connId)
                             ?.disconnected ==

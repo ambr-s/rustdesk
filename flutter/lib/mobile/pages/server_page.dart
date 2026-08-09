@@ -9,11 +9,11 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
 import '../../common.dart';
+import '../../common/page_shape.dart';
 import '../../common/widgets/dialog.dart';
 import '../../consts.dart';
 import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
-import 'home_page.dart';
 
 class ServerPage extends StatefulWidget implements PageShape {
   @override
