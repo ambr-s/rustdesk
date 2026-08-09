@@ -389,7 +389,9 @@ jobs:
             '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
             '--add', 'Microsoft.VisualStudio.Component.Windows11SDK.26100'
           )
-          $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+          $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -PassThru -NoNewWindow
+          # Avoid waiting for long-lived installer descendants.
+          $process.WaitForExit()
           if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio Build Tools installation failed with exit code $($process.ExitCode)" }
           $vcInstallations = @(& $vswhere -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
           if ($LASTEXITCODE -ne 0) { throw 'vswhere.exe failed while verifying MSVC x64' }
@@ -420,6 +422,30 @@ jobs:
             }
           }
           Write-Host "Visual Studio Build Tools -> $installation"
+
+      - name: Collect Visual Studio setup diagnostics
+        if: ${{ failure() }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $destination = Join-Path $env:RUNNER_TEMP 'visual-studio-setup-diagnostics'
+          New-Item -ItemType Directory -Force $destination | Out-Null
+          Get-ChildItem -Path $env:TEMP -File -Filter 'dd_*' | ForEach-Object {
+            Copy-Item -Force $_.FullName (Join-Path $destination $_.Name)
+          }
+          $instances = 'C:\ProgramData\Microsoft\VisualStudio\Packages\_Instances'
+          if (Test-Path $instances) {
+            Copy-Item -Recurse -Force $instances (Join-Path $destination 'instances')
+          }
+          "Collected at $(Get-Date -Format o)" | Set-Content (Join-Path $destination 'README.txt')
+
+      - name: Upload Visual Studio setup diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: visual-studio-setup-diagnostics
+          if-no-files-found: error
+          path: ${{ runner.temp }}\visual-studio-setup-diagnostics
 
       - name: Probe MSVC tools and selected Windows SDK
         shell: pwsh
