@@ -201,6 +201,110 @@ fn main() {{
                          "flutter build linux --release -t lib/controller_main.dart "
                          "--dart-define=RUSTDESK_CONTROLLER_ONLY=true")
 
+    def test_root_library_gates_host_modules_and_service_exports(self) -> None:
+        source = (REPO_ROOT / "src/lib.rs").read_text()
+
+        self.assertIn('#[cfg(feature = "host-services")]\npub use platform::start_os_service;', source)
+        self.assertIn(
+            '#[cfg(all(\n'
+            '    not(target_os = "ios"),\n'
+            '    feature = "host-services"\n'
+            '))]\n'
+            '/// cbindgen:ignore\n'
+            'mod server;',
+            source,
+        )
+        self.assertIn(
+            '#[cfg(all(\n'
+            '    not(target_os = "ios"),\n'
+            '    feature = "host-services"\n'
+            '))]\n'
+            'pub use self::server::*;',
+            source,
+        )
+        for module in ("tray", "whiteboard"):
+            self.assertIn(
+                '#[cfg(all(\n'
+                '    not(any(target_os = "android", target_os = "ios")),\n'
+                '    feature = "host-services"\n'
+                '))]\n'
+                f"mod {module};",
+                source,
+            )
+
+    def test_core_main_keeps_outgoing_cli_branch_compiled(self) -> None:
+        source = (REPO_ROOT / "src/core_main.rs").read_text()
+        start = source.index("if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {")
+        body = source[start:source.index("\n    }\n    //_async_logger_holder", start)]
+        else_marker = "\n    } else {\n"
+        self.assertIn(else_marker, body)
+        server_branch, _outgoing_branch = body.split(else_marker, 1)
+        self.assertIn("std::thread::spawn(move || crate::start_server(false, no_server));", server_branch)
+        for outgoing_cli in ("--connect", "--file-transfer", "--terminal", "--port-forward"):
+            self.assertIn(outgoing_cli, source)
+        self.assertIn("return core_main_invoke_new_connection(std::env::args());", source)
+
+        lines = source.splitlines()
+        if_index = next(index for index, line in enumerate(lines) if "if args.is_empty() || crate::common::is_empty_uni_link(&args[0])" in line)
+        previous_nonblank = next(line for line in reversed(lines[:if_index]) if line.strip())
+        self.assertNotIn('feature = "host-services"', previous_nonblank)
+
+    def test_core_main_gates_every_host_startup_edge(self) -> None:
+        source = (REPO_ROOT / "src/core_main.rs").read_text()
+
+        self.assertIn(
+            '    #[cfg(feature = "host-services")]\n'
+            '    #[cfg(any(target_os = "linux", target_os = "windows"))]\n'
+            '    if args.is_empty() {',
+            source,
+        )
+        for startup_branch in (
+            '        if args[0] == "--tray" {',
+            '        if args[0] == "--install-service" {',
+            '        if args[0] == "--uninstall-service" {',
+            '        if args[0] == "--service" {',
+            '        if args[0] == "--server" {',
+            '        if args[0] == "--whiteboard" {',
+            '        if args[0] == "-gtk-sudo" {',
+        ):
+            gated_branch = f'        #[cfg(feature = "host-services")]\n{startup_branch}'
+            self.assertIn(gated_branch, source, startup_branch)
+
+        self.assertIn(
+            '            std::thread::spawn(move || crate::start_server(false, no_server));',
+            source,
+        )
+        self.assertIn('            crate::start_server(true, false);', source)
+        self.assertIn('            crate::start_os_service();', source)
+        self.assertIn('                crate::tray::start_tray();', source)
+
+    def test_host_gates_do_not_fallback_to_controller_feature_negation(self) -> None:
+        for path in (
+            "src/common.rs",
+            "src/core_main.rs",
+            "src/lib.rs",
+            "src/platform/linux.rs",
+            "src/platform/mod.rs",
+            "src/rendezvous_mediator.rs",
+            "src/ui_interface.rs",
+        ):
+            source = (REPO_ROOT / path).read_text()
+            self.assertNotIn(
+                'any(not(feature = "controller-only"), feature = "host-services")',
+                source,
+                path,
+            )
+
+    def test_linux_platform_host_startup_modules_are_feature_gated(self) -> None:
+        source = (REPO_ROOT / "src/platform/mod.rs").read_text()
+
+        for module in ("linux_desktop_manager", "gtk_sudo"):
+            self.assertIn(
+                '#[cfg(all(target_os = "linux", feature = "host-services"))]\n'
+                f"pub mod {module};",
+                source,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

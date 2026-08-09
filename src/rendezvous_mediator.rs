@@ -144,7 +144,7 @@ impl RendezvousMediator {
             });
         }
         // It is ok to run xdesktop manager when the headless function is not allowed.
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", feature = "host-services"))]
         if crate::is_server() {
             crate::platform::linux_desktop_manager::start_xdesktop();
         }

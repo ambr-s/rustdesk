@@ -20,10 +20,10 @@ pub mod delegate;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "host-services"))]
 pub mod linux_desktop_manager;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "host-services"))]
 pub mod gtk_sudo;
 
 #[cfg(all(

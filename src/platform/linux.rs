@@ -884,6 +884,7 @@ fn force_stop_server() {
     sleep_millis(super::SERVICE_INTERVAL);
 }
 
+#[cfg(feature = "host-services")]
 pub fn start_os_service() {
     check_if_stop_service();
     stop_rustdesk_servers();
@@ -2377,6 +2378,7 @@ fn switch_service(stop: bool) -> String {
     }
 }
 
+#[cfg(feature = "host-services")]
 pub fn uninstall_service(show_new_window: bool, _: bool) -> bool {
     if !has_cmd("systemctl") {
         // Failed when installed + flutter run + started by `show_new_window`.
@@ -2399,6 +2401,7 @@ pub fn uninstall_service(show_new_window: bool, _: bool) -> bool {
     std::process::exit(0);
 }
 
+#[cfg(feature = "host-services")]
 pub fn install_service() -> bool {
     let _installing = crate::platform::InstallingService::new();
     if !has_cmd("systemctl") {
@@ -2424,6 +2427,7 @@ fn check_if_stop_service() {
     }
 }
 
+#[cfg(feature = "host-services")]
 pub fn check_autostart_config() -> ResultType<()> {
     // SECURITY: Use trusted home directory lookup via getpwuid instead of $HOME env var
     // to prevent confused-deputy attacks where an attacker manipulates environment variables.

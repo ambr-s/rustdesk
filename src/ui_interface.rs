@@ -714,6 +714,7 @@ pub fn get_error() -> String {
     #[cfg(target_os = "linux")]
     {
         let dtype = crate::platform::linux::get_display_server();
+        #[cfg(feature = "host-services")]
         if crate::platform::linux::DISPLAY_SERVER_WAYLAND == dtype {
             return crate::server::wayland::common_get_error();
         }

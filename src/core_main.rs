@@ -79,6 +79,7 @@ pub fn core_main() -> Option<Vec<String>> {
         }
         i += 1;
     }
+    #[cfg(feature = "host-services")]
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     if args.is_empty() {
         #[cfg(target_os = "linux")]
@@ -194,17 +195,20 @@ pub fn core_main() -> Option<Vec<String>> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     init_plugins(&args);
     if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {
-        #[cfg(target_os = "macos")]
+        #[cfg(feature = "host-services")]
         {
-            crate::platform::macos::try_remove_temp_update_dir(None);
-        }
+            #[cfg(target_os = "macos")]
+            {
+                crate::platform::macos::try_remove_temp_update_dir(None);
+            }
 
-        #[cfg(windows)]
-        {
-            crate::platform::try_remove_temp_update_files();
-            hbb_common::config::PeerConfig::preload_peers();
+            #[cfg(windows)]
+            {
+                crate::platform::try_remove_temp_update_files();
+                hbb_common::config::PeerConfig::preload_peers();
+            }
+            std::thread::spawn(move || crate::start_server(false, no_server));
         }
-        std::thread::spawn(move || crate::start_server(false, no_server));
     } else {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         // Root CLI management commands must talk to the user `--server` main IPC.
@@ -372,31 +376,33 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
         }
-        if args[0] == "--remove" {
-            if args.len() == 2 {
-                // sleep a while so that process of removed exe exit
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                std::fs::remove_file(&args[1]).ok();
-                return None;
-            }
-        } else if args[0] == "--tray" {
+        #[cfg(feature = "host-services")]
+        if args[0] == "--tray" {
             if !crate::check_process("--tray", true) {
                 crate::tray::start_tray();
             }
             return None;
-        } else if args[0] == "--install-service" {
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "--install-service" {
             log::info!("start --install-service");
             crate::platform::install_service();
             return None;
-        } else if args[0] == "--uninstall-service" {
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "--uninstall-service" {
             log::info!("start --uninstall-service");
             crate::platform::uninstall_service(false, true);
             return None;
-        } else if args[0] == "--service" {
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "--service" {
             log::info!("start --service");
             crate::start_os_service();
             return None;
-        } else if args[0] == "--server" {
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "--server" {
             log::info!("start --server with user {}", crate::username());
             #[cfg(target_os = "linux")]
             {
@@ -411,9 +417,7 @@ pub fn core_main() -> Option<Vec<String>> {
             #[cfg(windows)]
             crate::privacy_mode::restore_reg_connectivity(true, false);
             #[cfg(any(target_os = "linux", target_os = "windows"))]
-            {
-                crate::start_server(true, false);
-            }
+            crate::start_server(true, false);
             #[cfg(target_os = "macos")]
             {
                 let handler = std::thread::spawn(move || crate::start_server(true, false));
@@ -422,6 +426,28 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(handler.join());
             }
             return None;
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "--whiteboard" {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            crate::whiteboard::run();
+            return None;
+        }
+        #[cfg(feature = "host-services")]
+        if args[0] == "-gtk-sudo" {
+            #[cfg(target_os = "linux")]
+            if args.len() > 2 {
+                crate::platform::gtk_sudo::exec();
+            }
+            return None;
+        }
+        if args[0] == "--remove" {
+            if args.len() == 2 {
+                // sleep a while so that process of removed exe exit
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                std::fs::remove_file(&args[1]).ok();
+                return None;
+            }
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;
@@ -722,19 +748,6 @@ pub fn core_main() -> Option<Vec<String>> {
             {
                 crate::ui_interface::start_option_status_sync();
                 crate::flutter::connection_manager::start_cm_no_ui();
-            }
-            return None;
-        } else if args[0] == "--whiteboard" {
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            {
-                crate::whiteboard::run();
-            }
-            return None;
-        } else if args[0] == "-gtk-sudo" {
-            // rustdesk service kill `rustdesk --` processes
-            #[cfg(target_os = "linux")]
-            if args.len() > 2 {
-                crate::platform::gtk_sudo::exec();
             }
             return None;
         } else {

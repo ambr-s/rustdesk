@@ -122,7 +122,7 @@ impl Drop for SimpleCallOnReturn {
 }
 
 pub fn global_init() -> bool {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "host-services"))]
     {
         if !crate::platform::linux::is_x11() {
             crate::server::wayland::init();
