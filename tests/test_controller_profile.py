@@ -1,4 +1,4 @@
-import shutil
+import os
 import subprocess
 import tempfile
 import unittest
@@ -87,6 +87,7 @@ fn main() {{
     assert!(build_support::controller_features_conflict(true, true));
     assert!(!build_support::controller_features_conflict(true, false));
     assert!(!build_support::controller_features_conflict(false, true));
+    build_support::enforce_controller_feature_exclusivity();
 }}
 """.format(support=REPO_ROOT / "build_support.rs")
         with tempfile.TemporaryDirectory() as directory:
@@ -100,18 +101,42 @@ fn main() {{
                 check=False,
             )
             self.assertEqual(guard.returncode, 0, guard.stderr)
-            self.assertEqual(subprocess.run([str(Path(directory) / "guard")], check=False).returncode, 0)
+            guard_binary = str(Path(directory) / "guard")
+            clean_environment = dict(os.environ)
+            clean_environment.pop("CARGO_FEATURE_CONTROLLER_ONLY", None)
+            clean_environment.pop("CARGO_FEATURE_HOST_SERVICES", None)
+            self.assertEqual(
+                subprocess.run([guard_binary], env=clean_environment, check=False).returncode,
+                0,
+            )
+            conflict_environment = dict(clean_environment)
+            conflict_environment["CARGO_FEATURE_CONTROLLER_ONLY"] = "1"
+            conflict_environment["CARGO_FEATURE_HOST_SERVICES"] = "1"
+            conflict = subprocess.run(
+                [guard_binary],
+                env=conflict_environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertNotEqual(conflict.returncode, 0)
+            self.assertIn(
+                "controller-only cannot be combined with host-services; use --no-default-features",
+                conflict.stderr,
+            )
 
         build_script = (REPO_ROOT / "build.rs").read_text()
         self.assertIn('#[path = "build_support.rs"]', build_script)
-        guard_call = build_script.index("build_support::controller_features_conflict(")
+        guard_call = build_script.index("build_support::enforce_controller_feature_exclusivity();")
         first_build_side_effect = build_script.index("hbb_common::gen_version();")
         self.assertLess(guard_call, first_build_side_effect)
         self.assertIn("CARGO_FEATURE_CONTROLLER_ONLY", build_script)
         self.assertIn("CARGO_FEATURE_HOST_SERVICES", build_script)
+        support_source = (REPO_ROOT / "build_support.rs").read_text()
         self.assertIn(
             "controller-only cannot be combined with host-services; use --no-default-features",
-            build_script,
+            support_source,
         )
 
         library = (REPO_ROOT / "src/lib.rs").read_text()
@@ -122,23 +147,6 @@ fn main() {{
         self.assertIn("compile_error!", library[:500])
         self.assertIn("--no-default-features", library[:500])
 
-        if shutil.which("pkg-config") is None:
-            return
-
-        result = subprocess.run(
-            ["cargo", "check", "--locked", "--lib", "--features", "controller-only"],
-            cwd=REPO_ROOT,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        cargo_output = result.stdout + result.stderr
-        self.assertIn(
-            "controller-only cannot be combined with host-services",
-            cargo_output,
-        )
 
     def test_controller_profile_rejects_host_capability_flags(self) -> None:
         for flag in ("drm", "unix_file_copy_paste", "vram"):
