@@ -4,12 +4,13 @@ use crate::clipboard::CLIPBOARD_INTERVAL;
 use crate::clipboard::{update_clipboard, ClipboardSide};
 #[cfg(all(not(any(target_os = "ios")), feature = "host-services"))]
 use crate::{audio_service, ConnInner, CLIENT_SERVER};
+#[cfg(feature = "host-services")]
+use crate::common::get_default_sound_input;
 use crate::{
     client::{
         self, new_voice_call_request, Client, Data, Interface, MediaData, MediaSender,
         QualityStatus, MILLI1, SEC30,
     },
-    common::get_default_sound_input,
     ui_session_interface::{InvokeUiSession, Session},
 };
 
@@ -25,7 +26,7 @@ use crate::{clipboard::try_empty_clipboard_files, clipboard_file::unix_file_clip
 ))]
 use clipboard::ContextSend;
 use crossbeam_queue::ArrayQueue;
-#[cfg(not(target_os = "ios"))]
+#[cfg(all(not(target_os = "ios"), feature = "host-services"))]
 use hbb_common::tokio::sync::mpsc::error::TryRecvError;
 use hbb_common::{
     allow_err,
@@ -66,6 +67,7 @@ pub struct Remote<T: InvokeUiSession> {
     receiver: mpsc::UnboundedReceiver<Data>,
     sender: mpsc::UnboundedSender<Data>,
     // Stop sending local audio to remote client.
+    #[cfg(feature = "host-services")]
     stop_voice_call_sender: Option<std::sync::mpsc::Sender<()>>,
     voice_call_request_timestamp: Option<NonZeroI64>,
     read_jobs: Vec<fs::TransferJob>,
@@ -126,6 +128,7 @@ impl<T: InvokeUiSession> Remote<T> {
             client_conn_id: 0,
             data_count: Arc::new(AtomicUsize::new(0)),
             video_format: CodecFormat::Unknown,
+            #[cfg(feature = "host-services")]
             stop_voice_call_sender: None,
             voice_call_request_timestamp: None,
             elevation_requested: false,
@@ -344,6 +347,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                 }
                 log::debug!("Exit io_loop of id={}", self.handler.get_id());
+                #[cfg(feature = "host-services")]
                 // Stop client audio server.
                 if let Some(s) = self.stop_voice_call_sender.take() {
                     s.send(()).ok();
@@ -465,6 +469,7 @@ impl<T: InvokeUiSession> Remote<T> {
         }
     }
 
+    #[cfg(feature = "host-services")]
     fn stop_voice_call(&mut self) {
         let voice_call_sender = std::mem::replace(&mut self.stop_voice_call_sender, None);
         if let Some(stopper) = voice_call_sender {
@@ -473,6 +478,7 @@ impl<T: InvokeUiSession> Remote<T> {
     }
 
     // Start a voice call recorder, records audio and send to remote
+    #[cfg(feature = "host-services")]
     fn start_voice_call(&mut self) -> Option<std::sync::mpsc::Sender<()>> {
         if self.handler.is_file_transfer()
             || self.handler.is_port_forward()
@@ -990,6 +996,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 self.handler.on_voice_call_waiting();
             }
             Data::CloseVoiceCall => {
+                #[cfg(feature = "host-services")]
                 self.stop_voice_call();
                 let msg = new_voice_call_request(false);
                 self.handler
@@ -2083,6 +2090,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         // TODO: maybe we will do a voice call from the peer in the future.
                     } else {
                         log::debug!("The remote has requested to close the voice call");
+                        #[cfg(feature = "host-services")]
                         if let Some(sender) = self.stop_voice_call_sender.take() {
                             allow_err!(sender.send(()));
                             self.handler.on_voice_call_closed("");
@@ -2098,7 +2106,10 @@ impl<T: InvokeUiSession> Remote<T> {
                             if response.accepted {
                                 // The peer accepted the voice call.
                                 self.handler.on_voice_call_started();
-                                self.stop_voice_call_sender = self.start_voice_call();
+                                #[cfg(feature = "host-services")]
+                                {
+                                    self.stop_voice_call_sender = self.start_voice_call();
+                                }
                             } else {
                                 // The peer refused the voice call.
                                 self.handler.on_voice_call_closed("");

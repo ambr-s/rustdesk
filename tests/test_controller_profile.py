@@ -320,6 +320,50 @@ fn main() {{
         )
         self.assertNotIn("pub mod dbus;", server)
 
+    def test_controller_io_loop_gates_local_capture_imports(self) -> None:
+        source = (REPO_ROOT / "src/client/io_loop.rs").read_text()
+
+        self.assertIn(
+            '#[cfg(feature = "host-services")]\nuse crate::common::get_default_sound_input;',
+            source,
+        )
+        self.assertIn(
+            '#[cfg(all(not(target_os = "ios"), feature = "host-services"))]\nuse hbb_common::tokio::sync::mpsc::error::TryRecvError;',
+            source,
+        )
+        self.assertNotIn("    common::get_default_sound_input,", source)
+        self.assertNotIn(
+            '#[cfg(not(target_os = "ios"))]\nuse hbb_common::tokio::sync::mpsc::error::TryRecvError;',
+            source,
+        )
+
+    def test_controller_io_loop_excludes_the_local_recorder_boundary(self) -> None:
+        source = (REPO_ROOT / "src/client/io_loop.rs").read_text()
+        self.assertIn(
+            '#[cfg(feature = "host-services")]\n    fn start_voice_call(',
+            source,
+        )
+        self.assertIn(
+            '#[cfg(feature = "host-services")]\n    fn stop_voice_call(',
+            source,
+        )
+        self.assertIn(
+            '#[cfg(feature = "host-services")]\n                                {\n                                    self.stop_voice_call_sender = self.start_voice_call();\n                                }',
+            source,
+        )
+
+    def test_controller_io_loop_keeps_remote_playback_and_voice_call_protocol(self) -> None:
+        source = (REPO_ROOT / "src/client/io_loop.rs").read_text()
+        playback_start = source.rindex("Some(message::Union::AudioFrame(frame))")
+        playback = source[playback_start:source.index("\n                }", playback_start)]
+        voice_start = source.index("            Data::NewVoiceCall => {")
+        voice = source[voice_start:source.index("            Data::CloseVoiceCall => {", voice_start)]
+
+        self.assertIn("self.audio_sender", playback)
+        self.assertIn("new_voice_call_request(true)", voice)
+        self.assertIn("peer.send(&msg).await", voice)
+        self.assertIn("on_voice_call_waiting", voice)
+
 
 if __name__ == "__main__":
     unittest.main()
