@@ -287,9 +287,28 @@ jobs:
           }
 
       - name: Install LLVM
-        uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2
-        with:
-          version: ${{ env.LLVM_VERSION }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = Join-Path $env:RUNNER_TEMP "LLVM-$env:LLVM_VERSION-win64.exe"
+          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/LLVM-$env:LLVM_VERSION-win64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $file = Get-Item $archive
+          if ($file.Length -ne 290951930) { throw "Unexpected LLVM archive size: $($file.Length)" }
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '22e2f2c38be4c44db7a1e9da5e67de2a453c5b4be9cf91e139592a63877ac0a2') { throw "Unexpected LLVM archive SHA-256: $hash" }
+          $llvmPath = Join-Path $env:ProgramFiles 'LLVM'
+          & 7z x $archive "-o$llvmPath" -y
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed' }
+          $clang = Join-Path $llvmPath 'bin\clang.exe'
+          if (-not (Test-Path $clang)) { throw "clang.exe is unavailable: $clang" }
+          $version = & $clang --version | Select-Object -First 1
+          $expectedVersion = [regex]::Escape($env:LLVM_VERSION)
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch "clang version $expectedVersion") { throw "Unexpected clang version: $version" }
+          (Join-Path $llvmPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "LLVM_PATH=$llvmPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LD_LIBRARY_PATH=$(Join-Path $llvmPath 'lib');$env:LD_LIBRARY_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
