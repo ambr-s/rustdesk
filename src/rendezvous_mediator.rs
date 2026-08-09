@@ -26,13 +26,13 @@ use hbb_common::{
     AddrMangle, IntoTargetAddr, ResultType, Stream, TargetAddr,
 };
 
-use crate::{
-    check_port,
-    server::{check_zombie, new as new_server, ConnectionMeta, ServerPtr},
-};
+#[cfg(feature = "host-services")]
+use crate::server::{check_zombie, new as new_server, ServerPtr};
+use crate::{check_port, ConnectionMeta};
 
 type Message = RendezvousMessage;
 
+#[cfg(feature = "host-services")]
 fn connection_meta(
     control_permissions: Option<ControlPermissions>,
     controlled_context: Option<ControlledContext>,
@@ -113,6 +113,7 @@ impl RendezvousMediator {
         log::info!("server restart");
     }
 
+    #[cfg(feature = "host-services")]
     pub async fn start_all() {
         crate::test_nat_type();
         if config::is_outgoing_only() {
@@ -144,7 +145,7 @@ impl RendezvousMediator {
             });
         }
         // It is ok to run xdesktop manager when the headless function is not allowed.
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", feature = "host-services"))]
         if crate::is_server() {
             crate::platform::linux_desktop_manager::start_xdesktop();
         }
@@ -211,6 +212,7 @@ impl RendezvousMediator {
             .unwrap_or(host.to_owned())
     }
 
+    #[cfg(feature = "host-services")]
     pub async fn start_udp(server: ServerPtr, host: String) -> ResultType<()> {
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start udp: {host}");
@@ -332,6 +334,7 @@ impl RendezvousMediator {
     }
 
     #[inline]
+    #[cfg(feature = "host-services")]
     async fn handle_resp(
         &mut self,
         msg: Option<rendezvous_message::Union>,
@@ -420,6 +423,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     pub async fn start_tcp(server: ServerPtr, host: String) -> ResultType<()> {
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start tcp: {}", hbb_common::websocket::check_ws(&host));
@@ -478,6 +482,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     pub async fn start(server: ServerPtr, host: String) -> ResultType<()> {
         log::info!("start rendezvous mediator of {}", host);
         //If the investment agent type is http or https, then tcp forwarding is enabled.
@@ -492,6 +497,7 @@ impl RendezvousMediator {
         }
     }
 
+    #[cfg(feature = "host-services")]
     async fn handle_request_relay(&self, rr: RequestRelay, server: ServerPtr) -> ResultType<()> {
         let addr = AddrMangle::decode(&rr.socket_addr);
         let last = *LAST_RELAY_MSG.lock().await;
@@ -518,6 +524,7 @@ impl RendezvousMediator {
         .await
     }
 
+    #[cfg(feature = "host-services")]
     async fn create_relay(
         &self,
         socket_addr: Vec<u8>,
@@ -567,6 +574,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     async fn handle_intranet(&self, fla: FetchLocalAddr, server: ServerPtr) -> ResultType<()> {
         let addr = AddrMangle::decode(&fla.socket_addr);
         let last = *LAST_MSG.lock().await;
@@ -616,6 +624,7 @@ impl RendezvousMediator {
         .await
     }
 
+    #[cfg(feature = "host-services")]
     async fn handle_intranet_(
         &self,
         fla: FetchLocalAddr,
@@ -647,6 +656,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     async fn handle_punch_hole(&self, ph: PunchHole, server: ServerPtr) -> ResultType<()> {
         let mut peer_addr = AddrMangle::decode(&ph.socket_addr);
         let last = *LAST_MSG.lock().await;
@@ -721,6 +731,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     async fn punch_udp_hole(
         &self,
         peer_addr: SocketAddr,
@@ -745,6 +756,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     async fn register_pk(&mut self, socket: Sink<'_>) -> ResultType<()> {
         // Throttle register_pk when the device is awaiting deployment: server
         // already told us we're not in its db; sending more often than every
@@ -777,6 +789,7 @@ impl RendezvousMediator {
         Ok(())
     }
 
+    #[cfg(feature = "host-services")]
     async fn handle_uuid_mismatch(&mut self, socket: Sink<'_>) -> ResultType<()> {
         {
             let mut solving = SOLVING_PK_MISMATCH.lock().await;
@@ -792,6 +805,7 @@ impl RendezvousMediator {
         self.register_pk(socket).await
     }
 
+    #[cfg(feature = "host-services")]
     async fn register_peer(&mut self, socket: Sink<'_>) -> ResultType<()> {
         let solving = SOLVING_PK_MISMATCH.lock().await;
         if !(solving.is_empty() || *solving == self.host) {
@@ -844,6 +858,7 @@ fn get_direct_port() -> i32 {
     port
 }
 
+#[cfg(feature = "host-services")]
 async fn direct_server(server: ServerPtr) {
     let mut listener = None;
     let mut port = 0;
@@ -926,6 +941,7 @@ impl Sink<'_> {
     }
 }
 
+#[cfg(feature = "host-services")]
 async fn start_ipv6(
     peer_addr_v6: SocketAddr,
     peer_addr_v4: SocketAddr,
@@ -945,6 +961,7 @@ async fn start_ipv6(
     Default::default()
 }
 
+#[cfg(feature = "host-services")]
 async fn udp_nat_listen(
     socket: Arc<tokio::net::UdpSocket>,
     peer_addr: SocketAddr,

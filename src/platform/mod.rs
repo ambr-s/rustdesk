@@ -20,10 +20,10 @@ pub mod delegate;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "host-services"))]
 pub mod linux_desktop_manager;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "host-services"))]
 pub mod gtk_sudo;
 
 #[cfg(all(
@@ -57,9 +57,12 @@ pub fn is_xfce() -> bool {
 }
 
 pub fn breakdown_callback() {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "host-services"))]
     crate::input_service::clear_remapped_keycode();
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     crate::input_service::release_device_modifiers();
 }
 
@@ -213,6 +216,7 @@ pub fn get_pids_of_process_with_first_arg<S1: AsRef<str>, S2: AsRef<str>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "host-services")]
     #[test]
     fn test_cursor_data() {
         for _ in 0..30 {
@@ -230,6 +234,7 @@ mod tests {
             macos::is_process_trusted(false);
         }
     }
+    #[cfg(feature = "host-services")]
     #[test]
     fn test_get_cursor_pos() {
         for _ in 0..30 {

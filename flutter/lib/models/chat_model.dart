@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
-import 'package:flutter_hbb/mobile/pages/home_page.dart';
+
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:get/get.dart';
@@ -18,7 +18,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../consts.dart';
 import '../common.dart';
 import '../common/widgets/overlay.dart';
-import '../main.dart';
+import '../controller_launch_state.dart';
 import 'model.dart';
 
 class MessageKey {
@@ -301,9 +301,13 @@ class ChatModel with ChangeNotifier {
       await windowManager.setSizeAlignment(
           kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
     } else {
-      final currentSelectedTab =
-          gFFI.serverModel.tabController.state.value.selectedTabInfo;
-      final client = parent.target?.serverModel.clients.firstWhereOrNull(
+      final host = parent.target?.incomingHostModel;
+      if (host == null) {
+        _togglingCMSidePage = false;
+        return false;
+      }
+      final currentSelectedTab = host.tabController.state.value.selectedTabInfo;
+      final client = host.clients.firstWhereOrNull(
           (client) => client.id.toString() == currentSelectedTab.key);
       if (client != null) {
         client.unreadChatMessageCount.value = 0;
@@ -324,7 +328,7 @@ class ChatModel with ChangeNotifier {
     if (key.connId == clientModeID) {
       peerName = parent.target?.ffiModel.pi.username;
     } else {
-      peerName = parent.target?.serverModel.clients
+      peerName = parent.target?.incomingHostModel?.clients
           .firstWhereOrNull((client) => client.peerId == key.peerId)
           ?.name;
     }
@@ -352,13 +356,13 @@ class ChatModel with ChangeNotifier {
     }
     if (text.isEmpty) return;
     if (desktopType == DesktopType.cm) {
-      await showCmWindow();
+      await showHostCmWindow();
     }
     String? peerId;
     if (id == clientModeID) {
       peerId = session.id;
     } else {
-      peerId = session.serverModel.clients
+      peerId = session.incomingHostModel?.clients
           .firstWhereOrNull((e) => e.id == id)
           ?.peerId;
     }
@@ -405,8 +409,12 @@ class ChatModel with ChangeNotifier {
         }
       }
     } else {
-      final client = session.serverModel.clients
-          .firstWhereOrNull((client) => client.id == id);
+      final host = session.incomingHostModel;
+      if (host == null) {
+        debugPrint("Failed to receive host message without a host model");
+        return;
+      }
+      final client = host.clients.firstWhereOrNull((client) => client.id == id);
       if (client == null) {
         debugPrint("Failed to receive msg, client is null");
         return;
@@ -415,15 +423,14 @@ class ChatModel with ChangeNotifier {
         windowOnTop(null);
         // disable auto jumpTo other tab when hasFocus, and mark unread message
         final currentSelectedTab =
-            session.serverModel.tabController.state.value.selectedTabInfo;
+            host.tabController.state.value.selectedTabInfo;
         if (currentSelectedTab.key != id.toString() && inputNode.hasFocus) {
           client.unreadChatMessageCount.value += 1;
         } else {
-          parent.target?.serverModel.jumpTo(id);
+          host.jumpTo(id);
         }
       } else {
-        if (HomePage.homeKey.currentState?.isChatPageCurrentTab != true ||
-            _currentKey != messagekey) {
+        if (!isHostChatPageCurrentTab() || _currentKey != messagekey) {
           client.unreadChatMessageCount.value += 1;
           mobileUpdateUnreadSum();
         }
@@ -483,18 +490,18 @@ class ChatModel with ChangeNotifier {
 
   void mobileUpdateUnreadSum() {
     if (!isMobile) return;
-    var sum = 0;
-    parent.target?.serverModel.clients
+    num sum = 0;
+    parent.target?.incomingHostModel?.clients
         .map((e) => sum += e.unreadChatMessageCount.value)
         .toList();
     Future.delayed(Duration.zero, () {
-      mobileUnreadSum.value = sum;
+      mobileUnreadSum.value = sum.toInt();
     });
   }
 
   void mobileClearClientUnread(int id) {
     if (!isMobile) return;
-    final client = parent.target?.serverModel.clients
+    final client = parent.target?.incomingHostModel?.clients
         .firstWhereOrNull((client) => client.id == id);
     if (client != null) {
       Future.delayed(Duration.zero, () {

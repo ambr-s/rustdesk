@@ -25,22 +25,26 @@ import 'package:window_manager/window_manager.dart';
 
 import 'common.dart';
 import 'consts.dart';
+import 'controller_launch_state.dart';
 import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
+import 'models/incoming_host_model.dart';
+import 'models/server_model.dart';
+import 'models/model.dart';
 
 import 'package:flutter_hbb/plugin/handlers.dart'
     if (dart.library.html) 'package:flutter_hbb/web/plugin/handlers.dart';
 
-/// Basic window and launch properties.
-int? kWindowId;
-WindowType? kWindowType;
-late List<String> kBootArgs;
-
 Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
+  registerIncomingHostModelFactory(
+      (parent) => ServerModel(parent as WeakReference<FFI>));
+  isHostChatPageCurrentTab =
+      () => HomePage.homeKey.currentState?.isChatPageCurrentTab == true;
+  showHostCmWindow = () async => showCmWindow();
 
   debugPrint("launch args: $args");
   kBootArgs = List.from(args);

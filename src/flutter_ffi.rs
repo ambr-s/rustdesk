@@ -1307,11 +1307,18 @@ pub fn main_set_input_source(session_id: SessionID, value: String) {
 /// - Windows/macOS/Linux: attempts to move the cursor to (x, y)
 /// - Android/iOS: no-op, always returns `false`
 pub fn main_set_cursor_position(x: i32, y: i32) -> SyncReturn<bool> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     {
         SyncReturn(crate::set_cursor_pos(x, y))
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        not(feature = "host-services")
+    ))]
     {
         let _ = (x, y);
         SyncReturn(false)
@@ -1341,7 +1348,10 @@ pub fn main_clip_cursor(
     bottom: i32,
     enable: bool,
 ) -> SyncReturn<bool> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     {
         let rect = if enable {
             Some((left, top, right, bottom))
@@ -1350,7 +1360,11 @@ pub fn main_clip_cursor(
         };
         SyncReturn(crate::clip_cursor(rect))
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        not(feature = "host-services")
+    ))]
     {
         let _ = (left, top, right, bottom, enable);
         SyncReturn(false)
@@ -1614,9 +1628,8 @@ pub fn main_get_main_display() -> SyncReturn<String> {
     let display_info = "".to_owned();
     #[cfg(not(target_os = "ios"))]
     let mut display_info = "".to_owned();
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(all(not(target_os = "ios"), feature = "host-services"))]
     {
-        #[cfg(not(target_os = "linux"))]
         let is_linux_wayland = false;
         #[cfg(target_os = "linux")]
         let is_linux_wayland = !is_x11();
@@ -1659,7 +1672,7 @@ pub fn main_get_displays() -> SyncReturn<String> {
     let display_info = "".to_owned();
     #[cfg(not(target_os = "ios"))]
     let mut display_info = "".to_owned();
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(all(not(target_os = "ios"), feature = "host-services"))]
     if let Ok(displays) = crate::display_service::try_get_displays() {
         let displays = displays
             .iter()
@@ -1729,7 +1742,10 @@ pub fn cm_close_voice_call(id: i32) {
 }
 
 pub fn set_voice_call_input_device(_is_cm: bool, _device: String) {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     if _is_cm {
         let _ = crate::ipc::set_config("voice-call-input", _device);
     } else {
@@ -1738,7 +1754,10 @@ pub fn set_voice_call_input_device(_is_cm: bool, _device: String) {
 }
 
 pub fn get_voice_call_input_device(_is_cm: bool) -> String {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     if _is_cm {
         match crate::ipc::get_config("voice-call-input") {
             Ok(Some(device)) => device,
@@ -1747,7 +1766,11 @@ pub fn get_voice_call_input_device(_is_cm: bool) -> String {
     } else {
         crate::audio_service::get_voice_call_input_device().unwrap_or_default()
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        not(feature = "host-services")
+    ))]
     "".to_owned()
 }
 
@@ -2444,7 +2467,7 @@ pub fn cm_init() {
 /// * Should only be called in the main flutter window.
 /// * macOS only
 pub fn main_start_ipc_url_server() {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "host-services"))]
     std::thread::spawn(move || crate::server::start_ipc_url_server());
 }
 

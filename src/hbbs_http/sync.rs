@@ -4,7 +4,9 @@ use std::{
     time::Duration,
 };
 
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(all(not(any(target_os = "ios")), not(feature = "host-services")))]
+use crate::ui_interface::get_builtin_option;
+#[cfg(all(not(any(target_os = "ios")), feature = "host-services"))]
 use crate::{ui_interface::get_builtin_option, Connection};
 use hbb_common::{
     config::{self, keys, Config, LocalConfig},
@@ -103,7 +105,10 @@ async fn start_hbbs_sync_async() {
                 if config::option2bool("stop-service", &Config::get_option("stop-service")) {
                     continue;
                 }
+                #[cfg(feature = "host-services")]
                 let conns = Connection::alive_conns();
+                #[cfg(not(feature = "host-services"))]
+                let conns: Vec<i32> = Vec::new();
                 if info_uploaded.uploaded && (url != info_uploaded.url || id != info_uploaded.id) {
                     info_uploaded.uploaded = false;
                     *PRO.lock().unwrap() = false;

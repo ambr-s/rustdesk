@@ -12,6 +12,7 @@ pub(super) fn ext_support_callback(
     msg: &super::callback_msg::MsgToExtSupport,
 ) -> PluginReturn {
     match &msg.r#type as _ {
+        #[cfg(feature = "host-services")]
         EXT_SUPPORT_BLOCK_INPUT => {
             // let supported_plugins = [];
             // let supported = supported_plugins.contains(&id);

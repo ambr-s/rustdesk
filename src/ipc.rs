@@ -254,7 +254,10 @@ pub struct ClipboardNonFile {
     pub special_name: String,
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataKeyboard {
@@ -271,7 +274,10 @@ pub enum DataKeyboardResponse {
     GetKeyState(bool),
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum DataMouse {
@@ -370,11 +376,11 @@ pub enum Data {
     PrivacyModeState((i32, PrivacyModeState, String)),
     TestRendezvousServer,
     Deployed,
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     Keyboard(DataKeyboard),
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     KeyboardResponse(DataKeyboardResponse),
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
     Mouse(DataMouse),
     Control(DataControl),
     Theme(String),
@@ -494,7 +500,10 @@ pub enum Data {
     SocksWs(Option<Box<(Option<config::Socks5Server>, String)>>),
     #[cfg(target_os = "macos")]
     HasNoActiveConns(Option<bool>),
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(all(
+        not(any(target_os = "android", target_os = "ios")),
+        feature = "host-services"
+    ))]
     Whiteboard((String, crate::whiteboard::CustomEvent)),
     ControlPermissionsRemoteModify(Option<bool>),
     #[cfg(target_os = "windows")]
@@ -769,9 +778,11 @@ impl Drop for CheckIfRestart {
             RendezvousMediator::restart();
         }
         if self.audio_input != Config::get_option("audio-input") {
+            #[cfg(feature = "host-services")]
             crate::audio_service::restart();
         }
         if self.voice_call_input != Config::get_option("voice-call-input") {
+            #[cfg(feature = "host-services")]
             crate::audio_service::set_voice_call_input_device(
                 Some(Config::get_option("voice-call-input")),
                 true,
@@ -791,11 +802,12 @@ async fn handle(data: Data, stream: &mut Connection) {
             );
             allow_err!(stream.send(&Data::SystemInfo(Some(info))).await);
         }
+        #[cfg(feature = "host-services")]
         Data::ClickTime(_) => {
             let t = crate::server::CLICK_TIME.load(Ordering::SeqCst);
             allow_err!(stream.send(&Data::ClickTime(t)).await);
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(all(not(any(target_os = "android", target_os = "ios")), feature = "host-services"))]
         Data::MouseMoveTime(_) => {
             let t = crate::server::MOUSE_MOVE_TIME.load(Ordering::SeqCst);
             allow_err!(stream.send(&Data::MouseMoveTime(t)).await);
@@ -803,7 +815,7 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::Close => {
             log::info!("Receive close message");
             if EXIT_RECV_CLOSE.load(Ordering::SeqCst) {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(all(not(target_os = "android"), feature = "host-services"))]
                 crate::server::input_service::fix_key_down_timeout_at_exit();
                 if is_server() {
                     let _ = privacy_mode::turn_off_privacy(0, Some(PrivacyModeState::OffByPeer));
@@ -879,7 +891,7 @@ async fn handle(data: Data, stream: &mut Connection) {
             }
             _ => {}
         },
-        #[cfg(feature = "flutter")]
+        #[cfg(all(feature = "flutter", feature = "host-services"))]
         Data::VideoConnCount(None) => {
             let n = crate::server::AUTHED_CONNS
                 .lock()
@@ -935,7 +947,14 @@ async fn handle(data: Data, stream: &mut Connection) {
                         None
                     };
                 } else if name == "voice-call-input" {
-                    value = crate::audio_service::get_voice_call_input_device();
+                    #[cfg(feature = "host-services")]
+                    {
+                        value = crate::audio_service::get_voice_call_input_device();
+                    }
+                    #[cfg(not(feature = "host-services"))]
+                    {
+                        value = None;
+                    }
                 } else if name == "unlock-pin" {
                     value = Some(Config::get_unlock_pin());
                 } else if name == "trusted-devices" {
@@ -973,6 +992,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                 } else if name == "salt" {
                     Config::set_salt(&value);
                 } else if name == "voice-call-input" {
+                    #[cfg(feature = "host-services")]
                     crate::audio_service::set_voice_call_input_device(Some(value), true);
                 } else if name == "unlock-pin" {
                     Config::set_unlock_pin(&value);
@@ -1036,7 +1056,7 @@ async fn handle(data: Data, stream: &mut Connection) {
             crate::rendezvous_mediator::NEEDS_DEPLOY.store(false, Ordering::SeqCst);
             crate::rendezvous_mediator::RendezvousMediator::restart();
         }
-        #[cfg(feature = "flutter")]
+        #[cfg(all(feature = "flutter", feature = "host-services"))]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         Data::SwitchSidesRequest(id) => {
             let uuid = uuid::Uuid::new_v4();
@@ -1048,7 +1068,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                     .await
             );
         }
-        #[cfg(feature = "flutter")]
+        #[cfg(all(feature = "flutter", feature = "host-services"))]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         Data::SwitchSidesUuid(uuid, id, None) => {
             let allowed = uuid
@@ -1093,7 +1113,10 @@ async fn handle(data: Data, stream: &mut Connection) {
         }
         #[cfg(target_os = "linux")]
         Data::TerminalSessionCount(_) => {
+            #[cfg(feature = "host-services")]
             let count = crate::terminal_service::get_terminal_session_count(true);
+            #[cfg(not(feature = "host-services"))]
+            let count = 0;
             allow_err!(stream.send(&Data::TerminalSessionCount(count)).await);
         }
         #[cfg(feature = "hwcodec")]
@@ -1121,11 +1144,11 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::WaylandScreencastRestoreToken((key, value)) => {
             let v = if value == "get" {
                 let opt = get_local_option(key.clone());
-                #[cfg(not(target_os = "linux"))]
+                #[cfg(not(all(target_os = "linux", feature = "host-services")))]
                 {
                     Some(opt)
                 }
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", feature = "host-services"))]
                 {
                     let v = if opt.is_empty() {
                         if scrap::wayland::pipewire::is_rdp_session_hold() {
@@ -1140,7 +1163,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                 }
             } else if value == "clear" {
                 set_local_option(key.clone(), "".to_owned());
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", feature = "host-services"))]
                 scrap::wayland::pipewire::close_session();
                 Some("".to_owned())
             } else {
@@ -1177,7 +1200,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                 // This branch is left blank for unification and further use.
             }
         },
-        #[cfg(target_os = "windows")]
+        #[cfg(all(target_os = "windows", feature = "host-services"))]
         Data::PortForwardSessionCount(c) => match c {
             None => {
                 let count = crate::server::AUTHED_CONNS
@@ -1196,6 +1219,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                 // Port forward session count is only a get value.
             }
         },
+        #[cfg(feature = "host-services")]
         Data::ControlPermissionsRemoteModify(_) => {
             use hbb_common::rendezvous_proto::control_permissions::Permission;
             let state =
@@ -1206,7 +1230,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                     .await
             );
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(all(target_os = "windows", feature = "host-services"))]
         Data::FileTransferEnabledState(_) => {
             use hbb_common::rendezvous_proto::control_permissions::Permission;
             let state = crate::server::get_control_permission_state(Permission::file, false);
@@ -1435,7 +1459,7 @@ pub async fn connect_for_uid(
     Ok(conn)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "host-services"))]
 #[tokio::main(flavor = "current_thread")]
 pub async fn start_pa() {
     use crate::audio_service::AUDIO_DATA_SIZE_U8;

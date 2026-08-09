@@ -58,7 +58,7 @@ Each phase should be a small, reviewable issue/PR series. Dependencies are expli
 
 **Depends on:** Phase 2 controller boundary; Phase 3 runtime behavior; pinned source/build inputs.
 
-**Issues:** source-built manifest with app ID `ch.flourish.RustDeskController`; permission audit; SBOM/checksums/provenance; expand the focused baseline into feature-matrix, sandbox, Flatpak, artifact, and release CI; artifact forbidden-module/listener checks.
+**Issues:** source-built manifest with app ID `systems.amber.RustDeskController`; permission audit; SBOM/checksums/provenance; expand the focused baseline into feature-matrix, sandbox, Flatpak, artifact, and release CI; artifact forbidden-module/listener checks.
 
 **PRs:** manifest/build definition, feature-matrix/Flatpak CI expansion, and release metadata should be independently reviewed. The focused baseline CI belongs in Phase 0; this phase expands it rather than introducing the first CI coverage.
 

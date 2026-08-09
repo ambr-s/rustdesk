@@ -50,8 +50,6 @@ pub(crate) mod drm_capturer;
 pub mod uinput;
 #[cfg(target_os = "linux")]
 pub mod rdp_input;
-#[cfg(target_os = "linux")]
-pub mod dbus;
 #[cfg(not(target_os = "android"))]
 pub mod input_service;
 } else {
@@ -83,11 +81,7 @@ pub mod printer_service;
 pub type Childs = Arc<Mutex<Vec<std::process::Child>>>;
 type ConnMap = HashMap<i32, ConnInner>;
 
-#[derive(Clone, Default)]
-pub struct ConnectionMeta {
-    pub control_permissions: Option<ControlPermissions>,
-    pub controlled_context: Option<ControlledContext>,
-}
+pub use crate::connection_meta::ConnectionMeta;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const CONFIG_SYNC_INTERVAL_SECS: f32 = 0.3;

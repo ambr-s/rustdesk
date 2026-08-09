@@ -1595,7 +1595,7 @@ impl<T: InvokeUiSession> Session<T> {
 
     #[inline]
     pub fn request_voice_call(&self) {
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", feature = "host-services"))]
         std::thread::spawn(crate::ipc::start_pa);
         self.send(Data::NewVoiceCall);
     }

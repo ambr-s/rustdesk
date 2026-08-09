@@ -1,3 +1,6 @@
+#[path = "build_support.rs"]
+mod build_support;
+
 #[cfg(windows)]
 fn build_windows() {
     let file = "src/platform/windows.cc";
@@ -78,6 +81,9 @@ fn install_android_deps() {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CONTROLLER_ONLY");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HOST_SERVICES");
+    build_support::enforce_controller_feature_exclusivity();
     hbb_common::gen_version();
     install_android_deps();
     #[cfg(all(windows, feature = "inline"))]

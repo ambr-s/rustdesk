@@ -35,6 +35,13 @@ else:
 flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
 skip_cargo = False
 
+CONTROLLER_PROFILE_RECORD = {
+    'name': 'controller-only',
+    'cargo_features': ['controller-only', 'flutter', 'use_dasp'],
+    'dart_target': 'lib/controller_main.dart',
+    'dart_define': 'RUSTDESK_CONTROLLER_ONLY=true',
+}
+
 
 def get_deb_arch() -> str:
     custom_arch = os.environ.get("DEB_ARCH")
@@ -118,6 +125,8 @@ def make_parser():
              'Available: [Not used for now]. Special value is "ALL" and empty "". Default is empty.')
     parser.add_argument('--flutter', action='store_true',
                         help='Build flutter package', default=False)
+    parser.add_argument('--controller-only', action='store_true',
+                        help='Build the Linux Flutter controller profile', default=False)
     parser.add_argument(
         '--hwcodec',
         action='store_true',
@@ -312,7 +321,55 @@ def linux_packaging_branch():
     return 'deb'
 
 
+def resolve_profile(args):
+    if not args.controller_only:
+        return None
+    if not sys.platform.startswith('linux'):
+        raise ValueError('--controller-only is Linux only')
+    conflicting_flags = ('drm', 'unix_file_copy_paste', 'vram')
+    conflicts = [flag for flag in conflicting_flags if getattr(args, flag, False)]
+    if conflicts:
+        raise ValueError(
+            f'--controller-only cannot be combined with {", ".join("--" + flag.replace("_", "-") for flag in conflicts)}'
+        )
+    if getattr(args, 'skip_cargo', False):
+        raise ValueError('--controller-only cannot be combined with --skip-cargo')
+    return CONTROLLER_PROFILE_RECORD.copy()
+
+
+def controller_cargo_command(profile):
+    if profile != CONTROLLER_PROFILE_RECORD:
+        raise ValueError('controller Cargo command requires the controller-only profile record')
+    features = ','.join(profile['cargo_features'])
+    return f'cargo build --locked --release --lib --no-default-features --features {features}'
+
+
+def controller_flutter_command(profile):
+    if profile != CONTROLLER_PROFILE_RECORD:
+        raise ValueError('controller Flutter command requires the controller-only profile record')
+    return (
+        f"flutter build linux --release -t {profile['dart_target']} "
+        f"--dart-define={profile['dart_define']}"
+    )
+
+
+def reject_incomplete_controller_routes(args):
+    if not args.controller_only:
+        return
+    if args.package:
+        raise SystemExit(
+            '--controller-only --package is unavailable until a dedicated controller artifact path '
+            'is implemented')
+    raise SystemExit(
+        '--controller-only build routes are unavailable until a dedicated controller artifact path '
+        'is implemented')
+
+
 def get_features(args):
+    if args.controller_only:
+        if not sys.platform.startswith('linux'):
+            raise Exception('--controller-only is Linux only')
+        return ['controller-only', 'flutter', 'use_dasp']
     features = ['inline'] if not args.flutter else []
     if args.hwcodec:
         features.append('hwcodec')
@@ -696,12 +753,15 @@ def retarget_control_to_drm_variant():
         f.write(body)
 
 
-def build_flutter_deb(version, features):
+def build_flutter_deb(version, features, profile=None):
     if not skip_cargo:
-        system2(f'cargo build --locked --features {features} --lib --release')
+        if profile:
+            system2(controller_cargo_command(profile))
+        else:
+            system2(f'cargo build --locked --features {features} --lib --release')
         ffi_bindgen_function_refactor()
     os.chdir('flutter')
-    system2('flutter build linux --release')
+    system2(controller_flutter_command(profile) if profile else 'flutter build linux --release')
     system2('mkdir -p tmpdeb/usr/bin/')
     system2('mkdir -p tmpdeb/usr/share/rustdesk')
     system2('mkdir -p tmpdeb/etc/rustdesk/')
@@ -969,6 +1029,7 @@ def main():
     global skip_cargo
     parser = make_parser()
     args = parser.parse_args()
+    profile = resolve_profile(args)
 
     # Before anything with a side effect: this is a query, and a caller uses it to build the very
     # binary it will then package. `get_features` stays the single definition of what a flag
@@ -983,13 +1044,15 @@ def main():
         print(feats)
         return
 
+    reject_incomplete_controller_routes(args)
+
     if os.path.exists(exe_path):
         os.unlink(exe_path)
     if os.path.isfile('/usr/bin/pacman'):
         system2('git checkout src/ui/common.tis')
     version = get_version()
     features = ','.join(get_features(args))
-    flutter = args.flutter
+    flutter = args.flutter or args.controller_only
     if not flutter:
         system2('python3 res/inline-sciter.py')
     print(args.skip_cargo)
@@ -1072,7 +1135,7 @@ def main():
             else:
                 # system2(
                 #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
-                build_flutter_deb(version, features)
+                build_flutter_deb(version, features, profile)
         else:
             system2('cargo --locked bundle --release --features ' + features)
             if osx:

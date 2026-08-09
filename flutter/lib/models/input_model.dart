@@ -9,7 +9,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_hbb/main.dart';
+import 'package:flutter_hbb/controller_launch_state.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
 
@@ -366,8 +366,10 @@ class InputModel {
               !model.isViewCamera) {
             _sideButtonDownModels[mb] = model;
             // Fire-and-forget to avoid blocking the platform channel handler.
-            unawaited(model._sendMouseUnchecked(type, mb).catchError((Object e) {
-              debugPrint('[InputModel] failed to send side button $type for $mb: $e');
+            unawaited(
+                model._sendMouseUnchecked(type, mb).catchError((Object e) {
+              debugPrint(
+                  '[InputModel] failed to send side button $type for $mb: $e');
             }));
           }
         } else {
@@ -377,8 +379,10 @@ class InputModel {
           // release always goes through even if permissions changed.
           final model = _sideButtonDownModels.remove(mb);
           if (model != null) {
-            unawaited(model._sendMouseUnchecked(type, mb).catchError((Object e) {
-              debugPrint('[InputModel] failed to send side button $type for $mb: $e');
+            unawaited(
+                model._sendMouseUnchecked(type, mb).catchError((Object e) {
+              debugPrint(
+                  '[InputModel] failed to send side button $type for $mb: $e');
             }));
           }
         }
@@ -1660,7 +1664,8 @@ class InputModel {
     if (e is PointerScrollEvent) {
       final rawDx = e.scrollDelta.dx;
       final rawDy = e.scrollDelta.dy;
-      final dominantDelta = rawDx.abs() > rawDy.abs() ? rawDx.abs() : rawDy.abs();
+      final dominantDelta =
+          rawDx.abs() > rawDy.abs() ? rawDx.abs() : rawDy.abs();
       final isSmooth = dominantDelta < 1;
       final nowUs = DateTime.now().microsecondsSinceEpoch;
       final dtUs = _lastWheelTsUs == 0 ? 0 : nowUs - _lastWheelTsUs;

@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/model.dart';
-import 'package:flutter_hbb/models/server_model.dart';
+
 import 'package:get/get.dart';
 import 'file_model.dart';
 
@@ -109,8 +109,9 @@ class CmFileModel {
     try {
       dynamic d = jsonDecode(log);
       FileActionLog data = FileActionLog.fromJson(d);
-      Client? client =
-          gFFI.serverModel.clients.firstWhereOrNull((e) => e.id == data.connId);
+      final host = gFFI.incomingHostModel;
+      if (host == null) return;
+      final client = host.clients.firstWhereOrNull((e) => e.id == data.connId);
       var jobTable = _jobTables[data.connId];
       if (jobTable == null) {
         debugPrint("jobTable should not be null");
@@ -139,8 +140,7 @@ class CmFileModel {
         ..fileName = data.path
         ..action = CmFileAction.remove
         ..state = JobState.done);
-      final currentSelectedTab =
-          gFFI.serverModel.tabController.state.value.selectedTabInfo;
+      final currentSelectedTab = host.tabController.state.value.selectedTabInfo;
       if (!(gFFI.chatModel.isShowCMSidePage &&
           currentSelectedTab.key == data.connId.toString())) {
         // Wrong number if unreadCount changes during deletion, which rarely happens
@@ -202,10 +202,10 @@ class CmFileModel {
   }
 
   _addUnread(int connId) {
-    Client? client =
-        gFFI.serverModel.clients.firstWhereOrNull((e) => e.id == connId);
-    final currentSelectedTab =
-        gFFI.serverModel.tabController.state.value.selectedTabInfo;
+    final host = gFFI.incomingHostModel;
+    if (host == null) return;
+    final client = host.clients.firstWhereOrNull((e) => e.id == connId);
+    final currentSelectedTab = host.tabController.state.value.selectedTabInfo;
     if (!(gFFI.chatModel.isShowCMSidePage &&
         currentSelectedTab.key == connId.toString())) {
       client?.unreadChatMessageCount.value += 1;

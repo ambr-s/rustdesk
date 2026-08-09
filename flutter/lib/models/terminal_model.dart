@@ -4,7 +4,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
-import 'package:flutter_hbb/main.dart';
+import 'package:flutter_hbb/controller_launch_state.dart';
 import 'package:xterm/xterm.dart';
 
 import 'input_modifier_utils.dart';

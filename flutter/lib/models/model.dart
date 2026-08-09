@@ -20,7 +20,7 @@ import 'package:flutter_hbb/models/group_model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/printer_model.dart';
-import 'package:flutter_hbb/models/server_model.dart';
+import 'package:flutter_hbb/models/incoming_host_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/models/desktop_render_texture.dart';
@@ -397,9 +397,9 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'update_folder_files') {
         parent.target?.fileModel.jobController.updateFolderFiles(evt);
       } else if (name == 'add_connection') {
-        parent.target?.serverModel.addConnection(evt);
+        parent.target?.incomingHostModel?.addConnection(evt);
       } else if (name == 'on_client_remove') {
-        parent.target?.serverModel.onClientRemove(evt);
+        parent.target?.incomingHostModel?.onClientRemove(evt);
       } else if (name == 'update_quality_status') {
         parent.target?.qualityMonitorModel.updateQualityStatus(evt);
       } else if (name == 'update_block_input_state') {
@@ -408,7 +408,7 @@ class FfiModel with ChangeNotifier {
         updatePrivacyMode(evt, sessionId, peerId);
       } else if (name == 'show_elevation') {
         final show = evt['show'].toString() == 'true';
-        parent.target?.serverModel.setShowElevation(show);
+        parent.target?.incomingHostModel?.setShowElevation(show);
       } else if (name == 'cancel_msgbox') {
         cancelMsgBox(evt, sessionId);
       } else if (name == 'switch_back') {
@@ -434,7 +434,7 @@ class FfiModel with ChangeNotifier {
         // Voice call is requested by the peer.
         parent.target?.chatModel.onVoiceCallIncoming();
       } else if (name == 'update_voice_call_state') {
-        parent.target?.serverModel.updateVoiceCallState(evt);
+        parent.target?.incomingHostModel?.updateVoiceCallState(evt);
       } else if (name == 'fingerprint') {
         FingerprintState.find(peerId).value = evt['fingerprint'] ?? '';
       } else if (name == 'plugin_manager') {
@@ -3697,7 +3697,7 @@ class FFI {
   late final FfiModel ffiModel; // session
   late final CursorModel cursorModel; // session
   late final CanvasModel canvasModel; // session
-  late final ServerModel serverModel; // global
+  late final IncomingHostModel? incomingHostModel;
   late final ChatModel chatModel; // session
   late final FileModel fileModel; // session
   late final AbModel abModel; // global
@@ -3720,13 +3720,18 @@ class FFI {
   // Getter for terminal models
   Map<int, TerminalModel> get terminalModels => _terminalModels;
 
+  IncomingHostModel get serverModel =>
+      incomingHostModel ??
+      (throw UnsupportedError(
+          'Incoming host model is unavailable in controller mode.'));
+
   FFI(SessionID? sId) {
     sessionId = sId ?? (isDesktop ? Uuid().v4obj() : _constSessionId);
     imageModel = ImageModel(WeakReference(this));
     ffiModel = FfiModel(WeakReference(this));
     cursorModel = CursorModel(WeakReference(this));
     canvasModel = CanvasModel(WeakReference(this));
-    serverModel = ServerModel(WeakReference(this));
+    incomingHostModel = createIncomingHostModel(WeakReference(this));
     chatModel = ChatModel(WeakReference(this));
     fileModel = FileModel(WeakReference(this));
     userModel = UserModel(WeakReference(this));

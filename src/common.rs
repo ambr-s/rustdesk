@@ -122,7 +122,7 @@ impl Drop for SimpleCallOnReturn {
 }
 
 pub fn global_init() -> bool {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "host-services"))]
     {
         if !crate::platform::linux::is_x11() {
             crate::server::wayland::init();
@@ -280,12 +280,13 @@ pub fn get_default_sound_input() -> Option<String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let input = crate::platform::linux::get_default_pa_source();
-        return if let Some(input) = input {
-            Some(input.1)
-        } else {
-            None
-        };
+        #[cfg(feature = "host-services")]
+        {
+            let input = crate::platform::linux::get_default_pa_source();
+            return input.map(|input| input.1);
+        }
+        #[cfg(not(feature = "host-services"))]
+        return None;
     }
 }
 

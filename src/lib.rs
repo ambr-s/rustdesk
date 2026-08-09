@@ -1,15 +1,36 @@
+#[cfg(all(feature = "controller-only", feature = "host-services"))]
+compile_error!(
+    "controller-only cannot be combined with host-services; use --no-default-features when building the controller profile"
+);
+
 mod keyboard;
+mod connection_meta;
+pub use connection_meta::ConnectionMeta;
+#[cfg(target_os = "linux")]
+#[path = "server/dbus.rs"]
+pub mod dbus;
 /// cbindgen:ignore
 pub mod platform;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 pub use platform::{
     clip_cursor, get_cursor, get_cursor_data, get_cursor_pos, get_focused_display,
-    set_cursor_pos, start_os_service,
+    set_cursor_pos,
 };
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(feature = "host-services")]
+pub use platform::start_os_service;
+#[cfg(all(
+    not(target_os = "ios"),
+    feature = "host-services"
+))]
 /// cbindgen:ignore
 mod server;
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(all(
+    not(target_os = "ios"),
+    feature = "host-services"
+))]
 pub use self::server::*;
 mod client;
 mod lan;
@@ -50,10 +71,16 @@ mod port_forward;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod plugin;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 mod tray;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios")),
+    feature = "host-services"
+))]
 mod whiteboard;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
