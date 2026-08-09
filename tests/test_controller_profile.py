@@ -1,4 +1,5 @@
 import subprocess
+import tempfile
 import unittest
 from argparse import Namespace
 from unittest import mock
@@ -68,9 +69,53 @@ class ControllerBuildProfileTests(unittest.TestCase):
         args = Namespace(controller_only=True, flutter=False, hwcodec=False, vram=False,
                          unix_file_copy_paste=False, drm=False)
 
-        with mock.patch.object(build, "windows", True), mock.patch.object(build, "osx", False):
+        with mock.patch.object(build.sys, "platform", "freebsd13"):
             with self.assertRaisesRegex(Exception, "Linux only"):
                 build.resolve_profile(args)
+
+        with mock.patch.object(build.sys, "platform", "freebsd13"):
+            with self.assertRaisesRegex(Exception, "Linux only"):
+                build.get_features(args)
+
+    def test_cargo_rejects_controller_with_default_host_services(self) -> None:
+        harness = """
+#[path = "{support}"]
+mod build_support;
+
+fn main() {{
+    assert!(build_support::controller_features_conflict(true, true));
+    assert!(!build_support::controller_features_conflict(true, false));
+    assert!(!build_support::controller_features_conflict(false, true));
+}}
+""".format(support=REPO_ROOT / "build_support.rs")
+        with tempfile.TemporaryDirectory() as directory:
+            harness_path = Path(directory) / "guard.rs"
+            harness_path.write_text(harness)
+            guard = subprocess.run(
+                ["rustc", "--edition", "2021", str(harness_path), "-o", str(Path(directory) / "guard")],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(guard.returncode, 0, guard.stderr)
+            self.assertEqual(subprocess.run([str(Path(directory) / "guard")], check=False).returncode, 0)
+
+        result = subprocess.run(
+            ["cargo", "check", "--locked", "--lib", "--features", "controller-only"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        cargo_output = result.stdout + result.stderr
+        self.assertTrue(
+            "controller-only cannot be combined with host-services" in cargo_output
+            or "pkg-config" in cargo_output,
+            cargo_output,
+        )
 
     def test_controller_profile_rejects_host_capability_flags(self) -> None:
         for flag in ("drm", "unix_file_copy_paste", "vram"):

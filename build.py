@@ -324,7 +324,7 @@ def linux_packaging_branch():
 def resolve_profile(args):
     if not args.controller_only:
         return None
-    if windows or osx:
+    if not sys.platform.startswith('linux'):
         raise ValueError('--controller-only is Linux only')
     conflicting_flags = ('drm', 'unix_file_copy_paste', 'vram')
     conflicts = [flag for flag in conflicting_flags if getattr(args, flag, False)]
@@ -367,7 +367,7 @@ def reject_incomplete_controller_routes(args):
 
 def get_features(args):
     if args.controller_only:
-        if windows or osx:
+        if not sys.platform.startswith('linux'):
             raise Exception('--controller-only is Linux only')
         return ['controller-only', 'flutter', 'use_dasp']
     features = ['inline'] if not args.flutter else []

@@ -1,3 +1,6 @@
+#[path = "build_support.rs"]
+mod build_support;
+
 #[cfg(windows)]
 fn build_windows() {
     let file = "src/platform/windows.cc";
@@ -78,6 +81,18 @@ fn install_android_deps() {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CONTROLLER_ONLY");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HOST_SERVICES");
+    if build_support::controller_features_conflict(
+        std::env::var_os("CARGO_FEATURE_CONTROLLER_ONLY").is_some(),
+        std::env::var_os("CARGO_FEATURE_HOST_SERVICES").is_some(),
+    ) {
+        eprintln!(
+            "controller-only cannot be combined with host-services; use --no-default-features "
+                "when building the controller profile"
+        );
+        std::process::exit(1);
+    }
     hbb_common::gen_version();
     install_android_deps();
     #[cfg(all(windows, feature = "inline"))]

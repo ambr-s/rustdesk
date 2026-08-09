@@ -1,3 +1,8 @@
+#[cfg(all(feature = "controller-only", feature = "host-services"))]
+compile_error!(
+    "controller-only cannot be combined with host-services; use --no-default-features when building the controller profile"
+);
+
 mod keyboard;
 /// cbindgen:ignore
 pub mod platform;
