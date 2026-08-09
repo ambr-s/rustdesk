@@ -19,8 +19,11 @@ path = "src/naming.rs"
 [[bin]]
 name = "service"
 path = "src/service.rs"
+required-features = ["host-services"]
 
 [features]
+controller-only = []
+host-services = []
 inline = []
 use_samplerate = ["samplerate"]
 use_rubato = ["rubato"]
