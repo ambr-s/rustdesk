@@ -55,19 +55,19 @@ These observations describe the checked-in source at the Phase 0 base; they are 
 ## Alternatives considered
 
 1. **Runtime `--no-server` or hidden host UI:** rejected. It leaves host code and dependencies compiled and is explicitly insufficient for the requirements.
-2. **Make `controller-only` the default immediately:** deferred. It would alter upstream/default build behavior before the graph and downstream packaging are proven.
+2. **Make `controller-only` the default:** rejected. The default remains the upstream-compatible host product; controller builds are selected explicitly with `--no-default-features`.
 3. **Use only granular platform features with no product profile:** rejected. It does not provide a reviewable guarantee that every host edge is excluded.
 4. **Rename existing `flutter`/media features:** rejected. Unnecessary compatibility churn.
 
 ## Migration sequence
 
-1. Add feature declarations without changing `default`.
+1. Add feature declarations and include `host-services` in `default` so the gated service target remains part of ordinary upstream-style builds.
 2. Use `cargo metadata` and `cargo tree` to inventory every host-only edge.
 3. Gate `src/lib.rs`, `src/core_main.rs`, platform service startup, and the service binary target.
 4. Inventory each non-mobile dependency and each Cargo target, then mark host-only dependencies optional and bind them to `host-services`.
 5. Extract any shared outgoing types from `src/server/service.rs` into a neutral module only when compilation proves it necessary.
 6. Gate host-only dependencies and test both explicit profiles with `--locked`.
-7. Make packaging invoke the controller library target explicitly and reject every undeclared executable; only then consider a default-profile change in a separate reviewed decision.
+7. Make packaging invoke the controller library target explicitly and reject every undeclared executable.
 
 ## Validation
 

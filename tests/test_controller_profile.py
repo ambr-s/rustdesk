@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -101,6 +102,26 @@ fn main() {{
             self.assertEqual(guard.returncode, 0, guard.stderr)
             self.assertEqual(subprocess.run([str(Path(directory) / "guard")], check=False).returncode, 0)
 
+        build_script = (REPO_ROOT / "build.rs").read_text()
+        self.assertIn('#[path = "build_support.rs"]', build_script)
+        guard_call = build_script.index("build_support::controller_features_conflict(")
+        first_build_side_effect = build_script.index("hbb_common::gen_version();")
+        self.assertLess(guard_call, first_build_side_effect)
+        self.assertIn("CARGO_FEATURE_CONTROLLER_ONLY", build_script)
+        self.assertIn("CARGO_FEATURE_HOST_SERVICES", build_script)
+        self.assertIn("--no-default-features", build_script[guard_call:first_build_side_effect])
+
+        library = (REPO_ROOT / "src/lib.rs").read_text()
+        self.assertIn(
+            '#[cfg(all(feature = "controller-only", feature = "host-services"))]',
+            library,
+        )
+        self.assertIn("compile_error!", library[:500])
+        self.assertIn("--no-default-features", library[:500])
+
+        if shutil.which("pkg-config") is None:
+            return
+
         result = subprocess.run(
             ["cargo", "check", "--locked", "--lib", "--features", "controller-only"],
             cwd=REPO_ROOT,
@@ -111,9 +132,8 @@ fn main() {{
         )
         self.assertNotEqual(result.returncode, 0)
         cargo_output = result.stdout + result.stderr
-        self.assertTrue(
-            "controller-only cannot be combined with host-services" in cargo_output
-            or "pkg-config" in cargo_output,
+        self.assertIn(
+            "controller-only cannot be combined with host-services",
             cargo_output,
         )
 
