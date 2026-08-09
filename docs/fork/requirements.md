@@ -42,7 +42,7 @@ Runtime flags, hidden widgets, and Flatpak sandboxing are not substitutes for co
 
 ### Minimal source-built Wayland Flatpak
 
-Produce a source-built controller Flatpak with app ID `ch.flourish.RustDeskController`.
+Produce a source-built controller Flatpak with app ID `systems.amber.RustDeskController`.
 
 The baseline sandbox should be Wayland-only and least-privilege: Wayland, network, and PulseAudio, plus narrowly scoped DRI GPU device access only when required for controller-side decode/render. DRI access must not include DRM/KMS capture, screen-capture backends, or local capture. Do not grant home or host filesystem access: user-selected imports/exports, screenshots, recordings, and file-transfer file access must use document/file-picker portals. Portal-mediated interaction with the session bus is allowed only for those user-selected operations; do not grant unrestricted session-bus access. Explicitly prohibit X11, ScreenCast and RemoteDesktop portal/session permissions, Flatpak-management D-Bus access, unrestricted system-bus access, host/service permissions, PAM, xdotool, local input-injection functionality or dependencies, and any uinput/evdev access. `/dev/dri` presence alone is not a failure; forbidden runtime indicators are DRM/KMS or PipeWire capture and unauthorized device use. The existing prebuilt-deb manifest is not sufficient.
 

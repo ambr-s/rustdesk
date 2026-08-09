@@ -5,7 +5,7 @@
 
 ## Decision
 
-Create a dedicated source-built manifest for app ID `ch.flourish.RustDeskController`. Do not mutate the existing prebuilt-deb manifest into a source-build by implication. Every source, toolchain/module, generated input, and patch must be pinned by immutable revision or archive checksum, with update ownership recorded.
+Create a dedicated source-built manifest for app ID `systems.amber.RustDeskController`. Do not mutate the existing prebuilt-deb manifest into a source-build by implication. Every source, toolchain/module, generated input, and patch must be pinned by immutable revision or archive checksum, with update ownership recorded.
 
 The manifest/build definition must invoke the matched Rust and Flutter controller profiles, install only the controller bundle and metadata, and omit host helpers, service binaries, systemd units, installer scripts, PAM, xdotool, local input-injection dependencies, and capture helpers. Baseline permissions are Wayland, network, PulseAudio, and narrowly justified DRI decode/render access. No X11, home/host filesystem, ScreenCast/RemoteDesktop permissions, Flatpak-management D-Bus access, unrestricted system bus, uinput/evdev, or local capture. User-selected imports/exports, screenshots, recordings, and file transfer use document/file-picker portals; any session-bus permission is limited to demonstrated portal-mediated needs.
 
