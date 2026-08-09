@@ -11,7 +11,7 @@ Add two product-level features with stable, explicit names:
 - `controller-only`: outgoing controller application and Flutter bridge; it is the feature used by the Linux controller artifact.
 - `host-services`: local RustDesk host/service graph, including incoming connections, local capture, local input injection, service IPC, and service startup.
 
-Keep `flutter` as the existing bridge feature and keep existing capability features (`drm`, `drm-wake`, `hwcodec`, `vram`, and codec/audio choices) intact. Do **not** rename `flutter` or silently change the upstream `default` feature in Phase 0. The first implementation should define the product profiles explicitly in build commands:
+Keep `flutter` as the existing bridge feature and keep existing capability features (`drm`, `drm-wake`, `hwcodec`, `vram`, and codec/audio choices) intact. Do **not** rename `flutter`. Define the product profiles explicitly in build commands:
 
 ```text
 cargo build --locked --release --lib --no-default-features --features controller-only,flutter,use_dasp
@@ -19,7 +19,7 @@ cargo build --locked --release --lib --features host-services,flutter
 cargo build --locked --release --bin service --features host-services
 ```
 
-`controller-only` must not imply `host-services`; `host-services` must not be required by shared outgoing client/session code. If an upstream-compatible default profile is needed, retain the current `default = ["use_dasp"]` until a later release decision explicitly changes it.
+`controller-only` must not imply `host-services`; `host-services` must not be required by shared outgoing client/session code. The implementation adds `host-services` to the default feature set so ordinary upstream-style `cargo build` commands still select the `service` target after it gains `required-features = ["host-services"]`. The controller command uses `--no-default-features`, so this compatibility default cannot leak host services into the controller closure.
 
 The module graph follows the feature boundary, not runtime flags:
 
@@ -43,7 +43,7 @@ The exact dependency list is a follow-up implementation result. Cargo metadata/t
 
 ## Evidence from the current tree
 
-- `Cargo.toml:23-49` currently has `default = ["use_dasp"]`, `flutter`, and individual media/DRM features but no host/controller product boundary.
+- The upstream base had `default = ["use_dasp"]`, `flutter`, and individual media/DRM features but no host/controller product boundary.
 - `Cargo.toml:55` unconditionally enables `scrap` with `features = ["wayland"]`.
 - `src/lib.rs:10-13` unconditionally includes and re-exports `server` for non-iOS targets; `src/lib.rs:5-8` exports `start_os_service`.
 - `src/core_main.rs:196-208` starts `crate::start_server(false, no_server)` for the normal desktop path.
@@ -73,7 +73,7 @@ These observations describe the checked-in source at the Phase 0 base; they are 
 
 - `cargo metadata --no-deps --format-version 1` shows the intended features, `required-features` on `service`, and the complete target list.
 - `cargo tree --locked --no-default-features --features controller-only,flutter,use_dasp -e features` contains no host-only closure after the split, and equivalent target-platform runs cover every supported controller target.
-- `cargo check --locked --all-targets` exercises the host profile, while explicit controller `--lib` checks ensure no incidental service or helper target is selected.
+- `cargo check --locked --all-targets` exercises the default host profile, while explicit controller `--lib --no-default-features` checks ensure no incidental service or helper target is selected.
 - Controller compilation and host compilation both succeed where toolchains are available.
 - Source/AST checks confirm host modules and `src/service.rs` are not in the controller target.
 - The packaged controller artifact allowlist contains the controller executable/libraries only and fails if the `service` binary, local PTY implementation, host helper, systemd unit, or privileged installer is present.
