@@ -2,10 +2,10 @@
 use crate::clipboard::CLIPBOARD_INTERVAL;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::clipboard::{update_clipboard, ClipboardSide};
-#[cfg(all(not(any(target_os = "ios")), feature = "host-services"))]
-use crate::{audio_service, ConnInner, CLIENT_SERVER};
 #[cfg(feature = "host-services")]
 use crate::common::get_default_sound_input;
+#[cfg(all(not(any(target_os = "ios")), feature = "host-services"))]
+use crate::{audio_service, ConnInner, CLIENT_SERVER};
 use crate::{
     client::{
         self, new_voice_call_request, Client, Data, Interface, MediaData, MediaSender,
