@@ -109,7 +109,10 @@ fn main() {{
         self.assertLess(guard_call, first_build_side_effect)
         self.assertIn("CARGO_FEATURE_CONTROLLER_ONLY", build_script)
         self.assertIn("CARGO_FEATURE_HOST_SERVICES", build_script)
-        self.assertIn("--no-default-features", build_script[guard_call:first_build_side_effect])
+        self.assertIn(
+            "controller-only cannot be combined with host-services; use --no-default-features",
+            build_script,
+        )
 
         library = (REPO_ROOT / "src/lib.rs").read_text()
         self.assertIn(
